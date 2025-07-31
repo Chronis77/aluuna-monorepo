@@ -141,6 +141,13 @@ io.on('connection', (socket) => {
   // New true streaming endpoint using fetch with stream: true
   socket.on('true_streaming_request', async (request, callback) => {
     try {
+      console.log('🔍 Server received true_streaming_request:', { 
+        messageId: request.messageId, 
+        userMessageLength: request.userMessage?.length,
+        systemPromptLength: request.systemPrompt?.length,
+        conversationHistoryLength: request.conversationHistory?.length
+      });
+      
       const { 
         userMessage, 
         sessionContext, 
@@ -169,37 +176,52 @@ io.on('connection', (socket) => {
       const abortController = new AbortController();
       activeStreams.set(messageId, { socket, abortController });
       
-      // Set timeout to abort if response takes too long (30 seconds)
+      // Set timeout to abort if response takes too long (2 minutes)
       const timeoutId = setTimeout(() => {
-        abortController.abort();
         logger.warn('True stream timeout', { messageId });
-      }, 30000);
+        abortController.abort();
+      }, 120000); // 2 minutes
 
       // Prepare messages for OpenAI
       const messages = [
-        { role: 'system', content: systemPrompt || buildSystemPrompt(sessionContext) },
+        { role: 'system', content: systemPrompt },
         ...conversationHistory,
         { role: 'user', content: userMessage }
       ];
 
+      const startTime = Date.now();
+      
       // Use fetch with stream: true for true streaming
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages,
-          temperature,
-          max_tokens: maxTokens,
-          stream: true,
-          presence_penalty: 0.1,
-          frequency_penalty: 0.1,
-        }),
-        signal: abortController.signal
-      });
+      let response;
+      try {
+        response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o',
+            messages,
+            temperature,
+            max_tokens: maxTokens,
+            stream: true,
+            presence_penalty: 0.1,
+            frequency_penalty: 0.1,
+          }),
+          signal: abortController.signal
+        });
+      } catch (fetchError) {
+        logger.error('OpenAI API fetch error', { 
+          error: fetchError.message, 
+          type: fetchError.constructor.name,
+          code: fetchError.code 
+        });
+        throw fetchError;
+      }
+
+      const fetchEndTime = Date.now();
+      const fetchDuration = fetchEndTime - startTime;
 
       if (!response.ok) {
         throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
@@ -208,8 +230,11 @@ io.on('connection', (socket) => {
       // Get the reader for true streaming with better error handling
       let reader;
       try {
+        console.log('🔍 Server attempting to get response reader...');
         reader = response.body.getReader();
+        console.log('🔍 Server successfully got response reader');
       } catch (error) {
+        console.error('❌ Server failed to get response reader:', error.message);
         logger.error('Failed to get response reader, falling back to text()', { error: error.message });
         
         // Fallback: use response.text() instead of streaming
@@ -292,7 +317,6 @@ io.on('connection', (socket) => {
               const data = line.slice(6);
               
               if (data === '[DONE]') {
-                // Send completion message
                 socket.emit('true_streaming_message', {
                   type: 'done',
                   sessionId,
@@ -309,8 +333,6 @@ io.on('connection', (socket) => {
                 
                 if (content) {
                   chunkCount++;
-                  
-                  // Send token immediately to client
                   socket.emit('true_streaming_message', {
                     type: 'token',
                     sessionId,
@@ -321,7 +343,6 @@ io.on('connection', (socket) => {
                   });
                 }
               } catch (parseError) {
-                // Skip malformed JSON
                 logger.debug('Skipping malformed JSON chunk', { data });
               }
             }
@@ -740,46 +761,6 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Helper functions
-function buildSystemPrompt(sessionContext) {
-  return `You are Aluuna, a therapeutic AI companion. Build rapport first, then offer insights. Remember their story and care about their journey.
-
-RESPONSE FORMAT - Return ONLY this JSON:
-{
-  "session_memory_commit": "Brief insight from this interaction",
-  "long_term_memory_commit": "Significant growth or pattern to remember",
-  "response": "Your empathetic therapeutic response",
-  "wellness_judgement": "stable|growing|anxious|overwhelmed|crisis|n/a",
-  "emotional_state": "calm|anxious|sad|angry|excited|numb|overwhelmed|hopeful|confused|n/a",
-  "therapeutic_focus": "validation|exploration|challenge|containment|integration|celebration|n/a",
-  "session_timing": "start|early|mid|late|ending",
-  "new_memory_inference": {
-    "inner_parts": {
-      "name": "inner part name or null",
-      "role": "Protector|Exile|Manager|Firefighter|Self|Wounded|Creative|Sage",
-      "tone": "harsh|gentle|sad|angry|protective|neutral|loving|fearful|n/a",
-      "description": "brief description of this inner part",
-      "needs": "what this part is trying to protect or achieve"
-    },
-    "new_stuck_point": "stuck belief or behavior pattern or null",
-    "crisis_signal": false,
-    "value_conflict": "conflict between values and actions or null",
-    "coping_tool_used": "tool name or null",
-    "new_shadow_theme": "unconscious pattern or shadow work theme or null",
-    "new_pattern_loop": "recurring behavioral pattern or cycle or null",
-    "new_mantra": "personal affirmation or mantra that would help the user or null",
-    "new_relationship": {
-      "name": "person's name or null",
-      "role": "Partner|Child|Parent|Sibling|Friend|Colleague|Other",
-      "notes": "brief notes about the relationship or null",
-      "attachment_style": "secure|anxious|avoidant|disorganized|n/a"
-    },
-    "growth_moment": "moment of insight, breakthrough, or progress or null",
-    "therapeutic_theme": "core theme or pattern emerging in this session or null",
-    "emotional_need": "underlying emotional need being expressed or null",
-    "next_step": "suggested next step for their growth journey or null"
-  }
-}`;
-}
 
 function cleanJsonResponse(response) {
   const jsonStart = response.indexOf('{');

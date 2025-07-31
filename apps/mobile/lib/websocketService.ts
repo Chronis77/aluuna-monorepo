@@ -163,20 +163,38 @@ export class WebSocketService {
 
   // Send true streaming request (new endpoint)
   async sendTrueStreamingRequest(request: TrueStreamingRequest): Promise<void> {
+    console.log('🔌 sendTrueStreamingRequest called');
+    console.log('🔌 Socket connected:', this.isSocketConnected());
+    
     if (!this.socket || !this.isConnected) {
+      console.log('🔌 WebSocket not connected, attempting to connect...');
       await this.connect();
     }
 
     return new Promise((resolve, reject) => {
       if (!this.socket) {
+        console.error('❌ WebSocket still not connected after connect attempt');
         reject(new Error('WebSocket not connected - check if WebSocket URL is configured'));
         return;
       }
 
+      console.log('🔌 Sending true_streaming_request via socket.emit');
+      console.log('🔌 Current socket ID:', this.socket.id);
+      console.log('🔌 Socket connected status:', this.socket.connected);
+      console.log('🔌 Request details:', {
+        messageId: request.messageId,
+        sessionId: request.sessionId,
+        userMessageLength: request.userMessage?.length,
+        systemPromptLength: request.systemPrompt?.length
+      });
+
       this.socket.emit('true_streaming_request', request, (ack: any) => {
+        console.log('🔌 Received acknowledgment from server:', ack);
         if (ack.success) {
+          console.log('🔌 True streaming request sent successfully');
           resolve();
         } else {
+          console.error('❌ Server rejected true streaming request:', ack.error);
           reject(new Error(ack.error || 'Failed to send true streaming request'));
         }
       });
@@ -200,7 +218,26 @@ export class WebSocketService {
       return;
     }
 
-    this.socket.on('true_streaming_message', callback);
+    // If socket is not connected yet, wait for connection
+    if (!this.socket.connected || !this.socket.id) {
+      this.socket.once('connect', () => {
+        this.setupTrueStreamingListener(callback);
+      });
+      return;
+    }
+    
+    this.setupTrueStreamingListener(callback);
+  }
+
+  private setupTrueStreamingListener(callback: (message: TrueStreamingMessage) => void): void {
+    if (!this.socket) return;
+    
+    // Remove any existing listeners first
+    this.socket.off('true_streaming_message');
+    
+    this.socket.on('true_streaming_message', (message: TrueStreamingMessage) => {
+      callback(message);
+    });
   }
 
   // Remove streaming message listener

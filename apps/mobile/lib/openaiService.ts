@@ -368,21 +368,30 @@ export class OpenAIService {
       onError?: (error: string) => void;
     }
   ): Promise<{ response: string; structuredData?: any; error?: string }> {
+    console.log('🔍 GENERATE STREAMING RESPONSE CALLED - FUNCTION START');
+    console.log('🔍 User message:', userMessage);
+    console.log('🔍 Session ID:', sessionId);
+    console.log('🔍 Message ID:', messageId);
     try {
       // Ensure WebSocket connection
       if (!websocketService.isSocketConnected()) {
         console.log('🔌 Connecting to WebSocket for streaming...');
         await websocketService.connect();
+      } else {
+        console.log('🔌 WebSocket already connected');
       }
 
       console.log('🤖 Sending streaming AI request via WebSocket...');
 
-      // Build the system prompt
-      const systemPrompt = await PromptOptimizer.buildOptimizedStructuredPrompt(
-        sessionContext,
-        userMessage,
-        conversationHistory
-      );
+      // Build the system prompt using AIResponseRules
+      const systemPrompt = AIResponseRulesService.buildDynamicPrompt(sessionContext, userMessage);
+      
+      console.log('🔍 System prompt being sent to server:', systemPrompt.substring(0, 500) + '...');
+      console.log('🔍 System prompt contains delimiter instructions:', systemPrompt.includes('===METADATA_START==='));
+      console.log('🔍 System prompt contains "CRITICAL" instruction:', systemPrompt.includes('CRITICAL'));
+      console.log('🔍 System prompt length:', systemPrompt.length, 'characters');
+      console.log('🔍 System prompt contains "MANDATORY":', systemPrompt.includes('MANDATORY'));
+      console.log('🔍 ABOUT TO PREPARE WEBSOCKET REQUEST');
 
       // Prepare WebSocket request
       const wsRequest = {
@@ -392,12 +401,21 @@ export class OpenAIService {
         sessionId,
         messageId,
         systemPrompt,
-        temperature: 0.3,
-        maxTokens: 800
+        temperature: 0.3
       };
+
+      console.log('🔍 REACHED WEB SOCKET REQUEST PREPARATION');
+      console.log('🔍 WebSocket request being sent:');
+      console.log('🔍 Request keys:', Object.keys(wsRequest));
+      console.log('🔍 System prompt length:', systemPrompt.length);
+      console.log('🔍 User message:', wsRequest.userMessage);
+      console.log('---START OF WEBSOCKET REQUEST---');
+      console.log(JSON.stringify(wsRequest, null, 2));
+      console.log('---END OF WEBSOCKET REQUEST---');
 
       let fullResponse = '';
       let userResponse = '';
+      let displayContent = ''; // Track content to display in UI
       let metadataFound = false;
       let hasError = false;
 
@@ -413,28 +431,113 @@ export class OpenAIService {
               break;
 
             case 'token':
-              fullResponse += message.token;
+              console.log('🔍 TOKEN CASE REACHED - token:', JSON.stringify(message.token));
+              // Check if adding this token would create the delimiter
+              const potentialResponse = fullResponse + message.token;
               
-              // Check for metadata delimiter
-              if (fullResponse.includes('===METADATA_START===')) {
-                if (!metadataFound) {
-                  metadataFound = true;
-                  const parts = fullResponse.split('===METADATA_START===');
-                  userResponse = parts[0].trim();
-                  
-                  console.log('✅ User response completed via WebSocket');
-                }
+              // Debug: Log every 10th token to see what's coming in
+              if (Math.random() < 0.1) {
+                console.log('🔍 Token received:', JSON.stringify(message.token));
               }
               
-              // Send chunk to callback
-              callbacks.onChunk?.(message.token, false);
+              // Update fullResponse for tracking
+              fullResponse = potentialResponse;
+              
+              // Check for complete delimiter
+              if (potentialResponse.includes('===METADATA_START===')) {
+                if (!metadataFound) {
+                  metadataFound = true;
+                  
+                  // Find where the delimiter starts
+                  const delimiterIndex = potentialResponse.indexOf('===METADATA_START===');
+                  
+                  // Only send the part before the delimiter
+                  const contentBeforeDelimiter = potentialResponse.substring(0, delimiterIndex);
+                  
+                  // Send any remaining content before delimiter
+                  if (contentBeforeDelimiter.length > displayContent.length) {
+                    const remainingContent = contentBeforeDelimiter.substring(displayContent.length);
+                    if (remainingContent.length > 0) {
+                      callbacks.onChunk?.(remainingContent, false);
+                    }
+                  }
+                  
+                  // Set the final user response
+                  userResponse = contentBeforeDelimiter.trim();
+                  
+                  // Mark as complete immediately
+                  callbacks.onChunk?.('', true);
+                  
+                  // Don't send any more tokens to UI
+                  break;
+                }
+              } else {
+                // Check for partial delimiter that might be building up
+                const partialDelimiters = [
+                  '===METADATA_START',
+                  '===METADATA_STAR',
+                  '===METADATA_STA',
+                  '===METADATA_ST',
+                  '===METADATA_S',
+                  '===METADATA_',
+                  '===METADATA',
+                  '===METADAT',
+                  '===METADA',
+                  '===METAD',
+                  '===META',
+                  '===MET',
+                  '===ME',
+                  '===M',
+                  '===',
+                  '==',
+                  '='
+                ];
+                
+                // If we detect a partial delimiter, don't send this token to UI
+                const hasPartialDelimiter = partialDelimiters.some(partial => 
+                  potentialResponse.endsWith(partial)
+                );
+                
+                if (hasPartialDelimiter) {
+                  console.log('🔍 Detected partial delimiter, holding token:', message.token);
+                  console.log('🔍 Current potentialResponse ends with:', potentialResponse.substring(Math.max(0, potentialResponse.length - 30)));
+                  // Don't send this token to UI, but keep it in fullResponse for tracking
+                  break;
+                }
+                
+                // Debug: Log if we see any "===" patterns
+                if (message.token.includes('===')) {
+                  console.log('🔍 Found === in token:', JSON.stringify(message.token));
+                }
+                
+                // No delimiter found yet, send token normally
+                displayContent += message.token;
+                callbacks.onChunk?.(message.token, false);
+              }
               break;
 
             case 'done':
-              console.log('✅ AI streaming completed');
+              console.log('✅ AI streaming completed - DONE CASE REACHED');
+              console.log('🔍 Metadata found:', metadataFound);
+              console.log('📝 Full response length:', fullResponse.length);
+              console.log('📝 Full response contains delimiter:', fullResponse.includes('===METADATA_START==='));
+              console.log('🔍 TEST LOG - CAN YOU SEE THIS?');
+              console.log('🔍 Full response type:', typeof fullResponse);
+              console.log('🔍 Full response is empty?', fullResponse.length === 0);
+              console.log('📝 FULL AI RESPONSE CONTENT:');
+              console.log('🔍 ABOUT TO LOG CHUNKS - RESPONSE LENGTH:', fullResponse.length);
+              console.log('---START OF RESPONSE---');
+              // Log in chunks to avoid truncation
+              const chunkSize = 200;
+              for (let i = 0; i < fullResponse.length; i += chunkSize) {
+                const chunk = fullResponse.substring(i, i + chunkSize);
+                console.log(`📝 CHUNK ${Math.floor(i/chunkSize) + 1}:`, chunk);
+              }
+              console.log('---END OF RESPONSE---');
               
               // Process metadata and save session
               if (metadataFound) {
+                console.log('🚀 Calling processMetadataAndSaveSession...');
                 this.processMetadataAndSaveSession(
                   fullResponse,
                   sessionContext,
@@ -445,16 +548,18 @@ export class OpenAIService {
                 ).catch(error => {
                   console.error('Error processing metadata:', error);
                 });
+              } else {
+                console.log('⚠️ No metadata found, skipping processing');
               }
               
               callbacks.onChunk?.('', true);
-              callbacks.onComplete?.(userResponse || fullResponse);
+              callbacks.onComplete?.(userResponse || displayContent);
               
               // Clean up
               websocketService.offTrueStreamingMessage(handleStreamingMessage);
               
               resolve({
-                response: userResponse || fullResponse,
+                response: userResponse || displayContent,
                 structuredData: null // Will be processed asynchronously
               });
               break;
@@ -472,10 +577,11 @@ export class OpenAIService {
           }
         };
 
-        // Listen for streaming messages
+        // Listen for streaming messages BEFORE sending the request
         websocketService.onTrueStreamingMessage(handleStreamingMessage);
 
         // Send the request
+        console.log('🔍 ABOUT TO CALL WEBSOCKET SERVICE');
         websocketService.sendTrueStreamingRequest(wsRequest).catch((error) => {
           if (!hasError) {
             console.error('❌ Failed to send AI request:', error);
@@ -505,13 +611,31 @@ export class OpenAIService {
     userResponse: string
   ): Promise<void> {
     try {
-      const parts = fullResponse.split('===METADATA_START===');
-      const metadataJson = parts[1]?.trim();
+                  console.log('🔍 Processing metadata from full response...');
+            console.log('📝 Full AI response length:', fullResponse.length);
+            console.log('📝 Full AI response contains delimiter:', fullResponse.includes('===METADATA_START==='));
+            console.log('📝 Full AI response ends with:', fullResponse.substring(Math.max(0, fullResponse.length - 50)));
+            console.log('📝 FULL AI RESPONSE CONTENT:');
+            console.log('---START OF RESPONSE---');
+            console.log(fullResponse);
+            console.log('---END OF RESPONSE---');
+            const parts = fullResponse.split('===METADATA_START===');
+            const metadataJson = parts[1]?.trim();
       
       if (metadataJson) {
+        console.log('📋 Found metadata JSON:', metadataJson.substring(0, 200) + '...');
+        
         const structuredData = JSON.parse(metadataJson);
+        console.log('✅ Parsed structured data:', JSON.stringify(structuredData, null, 2));
         
         // Process structured data
+        console.log('🔍 Session context:', {
+          userProfile: sessionContext.userProfile,
+          userId: sessionContext.userProfile?.user_id,
+          sessionId: sessionRecordId,
+          sessionGroupId: sessionId
+        });
+        
         const processingContext: ProcessingContext = {
           userId: sessionContext.userProfile?.user_id || '',
           sessionId: sessionRecordId,
@@ -519,6 +643,7 @@ export class OpenAIService {
           currentSessionContext: sessionContext
         };
         
+        console.log('🚀 Starting memory processing...');
         await MemoryProcessingService.processStructuredResponse(
           structuredData,
           processingContext
@@ -532,6 +657,10 @@ export class OpenAIService {
           structuredData.therapeutic_focus || 'general',
           structuredData.emotional_state || 'neutral'
         );
+        
+        console.log('✅ Memory processing and session tracking completed');
+      } else {
+        console.log('⚠️ No metadata found in response');
       }
       
       // Save session with response

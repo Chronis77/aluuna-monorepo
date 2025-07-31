@@ -367,7 +367,50 @@ Remember: You are not just responding—you are co-creating a sacred space for h
         const sessionSpecificGuidance = this.buildSessionSpecificGuidance(sessionType, emotionalAnalysis, sessionProgress);
         const memoryIntegration = this.buildMemoryIntegration(userProfile, emotionalAnalysis);
 
-        return `${rules.systemPersonality}
+        return `*** CRITICAL RESPONSE FORMAT - YOU MUST FOLLOW THIS EXACTLY ***
+
+1. Write your empathetic therapeutic response to the user (natural, conversational, helpful)
+2. On a new line, write exactly: "===METADATA_START==="
+3. On the next line, write this JSON metadata (do not include in user response):
+
+{
+  "session_memory_commit": "Brief insight from this interaction",
+  "long_term_memory_commit": "Significant growth or pattern to remember",
+  "wellness_judgement": "stable|growing|anxious|overwhelmed|crisis|n/a",
+  "emotional_state": "calm|anxious|sad|angry|excited|numb|overwhelmed|hopeful|confused|n/a",
+  "therapeutic_focus": "validation|exploration|challenge|containment|integration|celebration|n/a",
+  "session_timing": "start|early|mid|late|ending",
+  "new_memory_inference": {
+    "inner_parts": {
+      "name": "inner part name or null",
+      "role": "Protector|Exile|Manager|Firefighter|Self|Wounded|Creative|Sage",
+      "tone": "harsh|gentle|sad|angry|protective|neutral|loving|fearful|n/a",
+      "description": "brief description of this inner part",
+      "needs": "what this part is trying to protect or achieve"
+    },
+    "new_stuck_point": "stuck belief or behavior pattern or null",
+    "crisis_signal": false,
+    "value_conflict": "conflict between values and actions or null",
+    "coping_tool_used": "tool name or null",
+    "new_shadow_theme": "unconscious pattern or shadow work theme or null",
+    "new_pattern_loop": "recurring behavioral pattern or cycle or null",
+    "new_mantra": "personal affirmation or mantra that would help the user or null",
+    "new_relationship": {
+      "name": "person's name or null",
+      "role": "Partner|Child|Parent|Sibling|Friend|Colleague|Other",
+      "notes": "brief notes about the relationship or null",
+      "attachment_style": "secure|anxious|avoidant|disorganized|n/a"
+    },
+    "growth_moment": "moment of insight, breakthrough, or progress or null",
+    "therapeutic_theme": "core theme or pattern emerging in this session or null",
+    "emotional_need": "underlying emotional need being expressed or null",
+    "next_step": "suggested next step for their growth journey or null"
+  }
+}
+
+*** MANDATORY: You MUST include "===METADATA_START===" after your response. This is not optional. ***
+
+${rules.systemPersonality}
 
 ${rules.memoryContext}
 
@@ -412,50 +455,6 @@ ${rules.forbiddenResponses.map(response => `- "${response}"`).join('\n')}
 
 USER CONTEXT: ${JSON.stringify(userProfile)}
 CURRENT SESSION CONTEXT: ${JSON.stringify(currentContext)}
-
-RESPONSE FORMAT:
-First, write your empathetic therapeutic response to the user. This should be natural, conversational, and helpful.
-
-Then, on a new line, write exactly: "===METADATA_START==="
-
-Then, on the next line, write the JSON metadata (do not include this in the user response):
-
-{
-  "session_memory_commit": "Brief insight from this interaction",
-  "long_term_memory_commit": "Significant growth or pattern to remember",
-  "wellness_judgement": "stable|growing|anxious|overwhelmed|crisis|n/a",
-  "emotional_state": "calm|anxious|sad|angry|excited|numb|overwhelmed|hopeful|confused|n/a",
-  "therapeutic_focus": "validation|exploration|challenge|containment|integration|celebration|n/a",
-  "session_timing": "start|early|mid|late|ending",
-  "new_memory_inference": {
-    "inner_parts": {
-      "name": "inner part name or null",
-      "role": "Protector|Exile|Manager|Firefighter|Self|Wounded|Creative|Sage",
-      "tone": "harsh|gentle|sad|angry|protective|neutral|loving|fearful|n/a",
-      "description": "brief description of this inner part",
-      "needs": "what this part is trying to protect or achieve"
-    },
-    "new_stuck_point": "stuck belief or behavior pattern or null",
-    "crisis_signal": false,
-    "value_conflict": "conflict between values and actions or null",
-    "coping_tool_used": "tool name or null",
-    "new_shadow_theme": "unconscious pattern or shadow work theme or null",
-    "new_pattern_loop": "recurring behavioral pattern or cycle or null",
-    "new_mantra": "personal affirmation or mantra that would help the user or null",
-    "new_relationship": {
-      "name": "person's name or null",
-      "role": "Partner|Child|Parent|Sibling|Friend|Colleague|Other",
-      "notes": "brief notes about the relationship or null",
-      "attachment_style": "secure|anxious|avoidant|disorganized|n/a"
-    },
-    "growth_moment": "moment of insight, breakthrough, or progress or null",
-    "therapeutic_theme": "core theme or pattern emerging in this session or null",
-    "emotional_need": "underlying emotional need being expressed or null",
-    "next_step": "suggested next step for their growth journey or null"
-  }
-}
-
-CRITICAL: You MUST include "===METADATA_START===" on a new line after your response. This is required for the system to function properly.
 
 Remember: You are not just responding—you are co-creating a sacred space for healing and self-discovery. Every interaction is an opportunity to help them return to their own truth and wisdom.`;
     }

@@ -113,6 +113,167 @@ export default function SessionScreen() {
     }
   }, [messages]);
 
+  // Enhanced scroll behavior for streaming messages
+  const scrollToBottomWithOffset = (offset: number = 0) => {
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+      // Additional scroll after a short delay to account for content rendering
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 50);
+    }, 100);
+  };
+
+  // More aggressive scroll for streaming content
+  const scrollToBottomForStreaming = () => {
+    // Initial scroll
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 50);
+    
+    // Multiple follow-up scrolls to ensure content is visible
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 150);
+    
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 300);
+    
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 500);
+  };
+
+  // Scroll with offset to account for loading dots and text height
+  const scrollToBottomWithPadding = () => {
+    setTimeout(() => {
+      // Try to scroll to end with some padding
+      flatListRef.current?.scrollToEnd({ animated: true });
+      
+      // Additional scroll after content renders
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }, 100);
+  };
+
+  // Force scroll to bottom with extra padding
+  const forceScrollToBottom = () => {
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 50);
+    
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 200);
+    
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 400);
+  };
+
+  // Scroll to actual bottom of content container
+  const scrollToActualBottom = () => {
+    setTimeout(() => {
+      // Scroll to the bottom of the content container with large offset
+      flatListRef.current?.scrollToOffset({ 
+        offset: 999999, // Large offset to ensure we reach the bottom
+        animated: true 
+      });
+    }, 100);
+    
+    // Additional scroll attempts
+    setTimeout(() => {
+      flatListRef.current?.scrollToOffset({ 
+        offset: 999999, 
+        animated: true 
+      });
+    }, 300);
+    
+    setTimeout(() => {
+      flatListRef.current?.scrollToOffset({ 
+        offset: 999999, 
+        animated: true 
+      });
+    }, 500);
+  };
+
+  // Fast scroll for streaming text updates
+  const fastScrollToBottom = () => {
+    // Immediate scroll
+    flatListRef.current?.scrollToOffset({ 
+      offset: 999999, 
+      animated: false // No animation for faster response
+    });
+    
+    // Quick follow-up scroll
+    setTimeout(() => {
+      flatListRef.current?.scrollToOffset({ 
+        offset: 999999, 
+        animated: false 
+      });
+    }, 10);
+  };
+
+  // Consistent scroll for completion (same as initial page load)
+  const scrollToBottomOnComplete = () => {
+    setTimeout(() => {
+      flatListRef.current?.scrollToOffset({ 
+        offset: 999999, 
+        animated: true 
+      });
+    }, 100);
+  };
+
+  // Force scroll to actual bottom with multiple attempts
+  const forceScrollToActualBottom = () => {
+    // Immediate scroll
+    flatListRef.current?.scrollToOffset({ 
+      offset: 999999, 
+      animated: false 
+    });
+    
+    // Multiple follow-up scrolls to override any automatic scrolling
+    setTimeout(() => {
+      flatListRef.current?.scrollToOffset({ 
+        offset: 999999, 
+        animated: false 
+      });
+    }, 50);
+    
+    setTimeout(() => {
+      flatListRef.current?.scrollToOffset({ 
+        offset: 999999, 
+        animated: false 
+      });
+    }, 150);
+    
+    setTimeout(() => {
+      flatListRef.current?.scrollToOffset({ 
+        offset: 999999, 
+        animated: false 
+      });
+    }, 300);
+  };
+
+  // Smooth scroll to actual bottom for completion
+  const smoothScrollToActualBottom = () => {
+    // Immediate smooth scroll
+    flatListRef.current?.scrollToOffset({ 
+      offset: 999999, 
+      animated: true 
+    });
+    
+    // Follow-up smooth scroll to ensure we stay at bottom
+    setTimeout(() => {
+      flatListRef.current?.scrollToOffset({ 
+        offset: 999999, 
+        animated: true 
+      });
+    }, 200);
+  };
+
   const initializeSession = async () => {
     try {
       setIsLoading(true);
@@ -321,10 +482,8 @@ export default function SessionScreen() {
       
       setMessages(prev => [...prev, userMessageObj, streamingMessage]);
       
-      // Ensure scroll to bottom after adding messages
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 200);
+      // Ensure scroll to bottom after adding messages with enhanced timing
+      scrollToActualBottom();
 
       // Load fresh messages from database to ensure we have the correct conversation history
       const dbSessions = await SessionService.getSessions(currentSessionGroup.id);
@@ -344,9 +503,30 @@ export default function SessionScreen() {
 
       // Build session context with session ID for continuity tracking
       const sessionContext = {
-        ...ContextService.buildSessionContext(),
+        ...ContextService.buildSessionContext({
+          name: 'User', // Default name
+          themes: [],
+          people: [],
+          coping_tools: [],
+          emotional_trends: {},
+          recent_insights: [],
+          ongoing_goals: [],
+          triggers: [],
+          strengths: [],
+          preferences: {
+            communication_style: 'direct',
+            session_length: 'medium',
+            focus_areas: []
+          }
+        }),
         sessionId: currentSessionGroup.id
       };
+      
+      // Add user ID to the context for metadata processing
+      sessionContext.userProfile = {
+        ...sessionContext.userProfile,
+        user_id: currentUserId
+      } as any;
 
       // Use WebSocket streaming instead of direct API call
       await sendAIMessageViaWebSocket(
@@ -377,6 +557,7 @@ export default function SessionScreen() {
     sessionRecordId: string
   ) => {
     try {
+      console.log('🔍 ABOUT TO CALL GENERATE STREAMING RESPONSE');
       await OpenAIService.generateStreamingResponse(
         userMessage,
         sessionContext,
@@ -387,6 +568,8 @@ export default function SessionScreen() {
         {
           onStart: () => {
             console.log('🚀 AI streaming started');
+            // Scroll to show loading dots
+            scrollToActualBottom();
           },
           onChunk: (chunk: string, isComplete: boolean) => {
             if (isComplete) {
@@ -396,23 +579,39 @@ export default function SessionScreen() {
                   ? { ...msg, isStreaming: false }
                   : msg
               ));
+              // Ensure we stay at the bottom when streaming completes
+              fastScrollToBottom();
             } else {
-              // Update streaming message
+              // Update streaming message - hide loading dots after first chunk
               setMessages(prev => prev.map(msg => 
                 msg.id === streamingMessageId 
-                  ? { ...msg, text: msg.text + chunk }
+                  ? { ...msg, text: msg.text + chunk, isStreaming: false }
                   : msg
               ));
+              
+              // Scroll to keep text visible as it streams
+              if (chunk.length > 0) {
+                fastScrollToBottom();
+              }
             }
           },
           onComplete: (fullResponse: string) => {
             console.log('✅ AI response completed');
+            
+            // Smooth scroll to actual bottom BEFORE updating the message
+            smoothScrollToActualBottom();
+            
             // Final update to ensure complete response
             setMessages(prev => prev.map(msg => 
               msg.id === streamingMessageId 
                 ? { ...msg, text: fullResponse, isStreaming: false }
                 : msg
             ));
+
+            // Smooth scroll again AFTER updating the message
+            setTimeout(() => {
+              smoothScrollToActualBottom();
+            }, 100);
 
             // Process memory and update session metadata
             processMemoryAndMetadata(fullResponse, sessionContext, sessionRecordId);
@@ -1075,11 +1274,15 @@ export default function SessionScreen() {
                 renderItem={renderMessage}
                 keyExtractor={(item) => item.id}
                 className="flex-1 p-5"
+                contentContainerStyle={{ 
+                  paddingBottom: 8, // Extra padding to ensure content is visible
+                  flexGrow: 1 
+                }}
                 onContentSizeChange={() => {
-                  setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+                  setTimeout(() => flatListRef.current?.scrollToOffset({ offset: 999999, animated: true }), 100);
                 }}
                 onLayout={() => {
-                  setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+                  setTimeout(() => flatListRef.current?.scrollToOffset({ offset: 999999, animated: true }), 100);
                 }}
                 onScroll={handleScroll}
                 scrollEventThrottle={16}

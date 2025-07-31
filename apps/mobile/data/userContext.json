@@ -1,0 +1,83 @@
+{
+  "defaultContext": {
+    "therapeuticApproach": "person-centered",
+    "communicationStyle": "empathetic and supportive",
+    "sessionGoals": [
+      "Provide emotional support",
+      "Help users process feelings",
+      "Encourage self-reflection",
+      "Build coping strategies"
+    ],
+    "boundaries": [
+      "No medical advice",
+      "No crisis intervention",
+      "Encourage professional help when needed",
+      "Maintain therapeutic relationship"
+    ]
+  },
+  "userProfiles": {
+    "template": {
+      "name": "",
+      "age": null,
+      "themes": [],
+      "people": [],
+      "coping_tools": [],
+      "emotional_trends": {},
+      "recent_insights": [],
+      "ongoing_goals": [],
+      "triggers": [],
+      "strengths": [],
+      "preferences": {
+        "communication_style": "gentle",
+        "session_length": "flexible",
+        "focus_areas": []
+      }
+    }
+  },
+  "sessionTemplates": {
+    "firstSession": {
+      "title": "Welcome Session",
+      "summary": "Initial meeting to establish therapeutic relationship",
+      "context": {
+        "isFirstSession": true,
+        "focus": "building rapport and understanding user needs"
+      }
+    },
+    "dailyCheckin": {
+      "title": "Daily Check-in",
+      "summary": "Regular emotional wellness check",
+      "context": {
+        "isDailyCheckin": true,
+        "focus": "current emotional state and daily experiences"
+      }
+    },
+    "reflection": {
+      "title": "Reflection Session",
+      "summary": "Deep dive into specific topics or experiences",
+      "context": {
+        "isReflection": true,
+        "focus": "exploring specific themes or experiences"
+      }
+    }
+  },
+  "prompts": {
+    "sessionStart": [
+      "How are you feeling today?",
+      "What's on your mind?",
+      "How has your day been so far?",
+      "Is there anything you'd like to talk about?"
+    ],
+    "followUp": [
+      "Can you tell me more about that?",
+      "How does that make you feel?",
+      "What do you think about that?",
+      "How has that been affecting you?"
+    ],
+    "reflection": [
+      "What have you learned about yourself?",
+      "How do you feel about that insight?",
+      "What would you like to work on?",
+      "How can I support you with this?"
+    ]
+  }
+} 

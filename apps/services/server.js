@@ -1,0 +1,824 @@
+const express = require('express');
+const cors = require('cors');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
+const textToSpeech = require('@google-cloud/text-to-speech');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const winston = require('winston');
+const OpenAI = require('openai');
+// Use native fetch (available in Node.js 18+) instead of node-fetch
+require('dotenv').config();
+
+// Create Express app and HTTP server
+const app = express();
+const server = createServer(app);
+const PORT = process.env.PORT || 3000;
+
+// API Key for authentication
+const API_KEY = process.env.ALUUNA_APP_API_KEY || 'your-secret-api-key-here';
+
+// Initialize logger
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'aluuna-services' },
+  transports: [
+    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'combined.log' })
+  ]
+});
+
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(new winston.transports.Console({
+    format: winston.format.simple()
+  }));
+}
+
+// Initialize Socket.IO with CORS
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Allow all origins for debugging
+    methods: ["GET", "POST", "OPTIONS"],
+    credentials: false, // Disable credentials for now
+    allowedHeaders: ["Content-Type", "Authorization", "x-api-key"]
+  },
+  transports: ['websocket', 'polling'], // Try websocket first
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  // Railway-specific settings
+  allowUpgrades: true,
+  upgradeTimeout: 10000,
+  maxHttpBufferSize: 1e6,
+});
+
+// Security middleware
+app.use(helmet());
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ["*"],
+  credentials: true
+}));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP'
+});
+app.use('/api/', limiter);
+
+// Increase timeout for long-running requests
+app.use((req, res, next) => {
+  req.setTimeout(30000); // 30 seconds
+  res.setTimeout(30000); // 30 seconds
+  next();
+});
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`📥 ${req.method} ${req.path} - ${req.ip} - ${new Date().toISOString()}`);
+  next();
+});
+
+// API Key authentication middleware
+const authenticateApiKey = (req, res, next) => {
+  const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
+  
+  if (!apiKey) {
+    return res.status(401).json({ 
+      error: 'API key required',
+      message: 'Please provide an API key in the x-api-key header or Authorization header'
+    });
+  }
+  
+  if (apiKey !== API_KEY) {
+    return res.status(403).json({ 
+      error: 'Invalid API key',
+      message: 'The provided API key is invalid'
+    });
+  }
+  
+  next();
+};
+
+// Initialize Google Cloud TTS client
+let ttsClient;
+if (process.env.GOOGLE_CREDENTIALS) {
+  // For Railway deployment - use credentials from environment variable
+  const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+  ttsClient = new textToSpeech.TextToSpeechClient({
+    credentials: credentials
+  });
+} else {
+  // For local development - use credentials file
+  ttsClient = new textToSpeech.TextToSpeechClient({
+    keyFilename: './google-creds.json'
+  });
+}
+
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Track active streams for cleanup
+const activeStreams = new Map();
+
+// WebSocket handlers
+io.on('connection', (socket) => {
+  logger.info(`Client connected: ${socket.id}`);
+
+  // New true streaming endpoint using fetch with stream: true
+  socket.on('true_streaming_request', async (request, callback) => {
+    try {
+      const { 
+        userMessage, 
+        sessionContext, 
+        conversationHistory, 
+        sessionId, 
+        messageId,
+        systemPrompt,
+        temperature = 0.3,
+        maxTokens = 800
+      } = request;
+      
+      logger.info('True streaming request received', { sessionId, messageId, socketId: socket.id });
+      
+      // Send acknowledgment
+      callback({ success: true });
+      
+      // Send start message immediately
+      socket.emit('true_streaming_message', {
+        type: 'start',
+        sessionId,
+        messageId,
+        timestamp: new Date().toISOString()
+      });
+
+      // Create abort controller for this stream
+      const abortController = new AbortController();
+      activeStreams.set(messageId, { socket, abortController });
+      
+      // Set timeout to abort if response takes too long (30 seconds)
+      const timeoutId = setTimeout(() => {
+        abortController.abort();
+        logger.warn('True stream timeout', { messageId });
+      }, 30000);
+
+      // Prepare messages for OpenAI
+      const messages = [
+        { role: 'system', content: systemPrompt || buildSystemPrompt(sessionContext) },
+        ...conversationHistory,
+        { role: 'user', content: userMessage }
+      ];
+
+      // Use fetch with stream: true for true streaming
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages,
+          temperature,
+          max_tokens: maxTokens,
+          stream: true,
+          presence_penalty: 0.1,
+          frequency_penalty: 0.1,
+        }),
+        signal: abortController.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+      }
+
+      // Get the reader for true streaming with better error handling
+      let reader;
+      try {
+        reader = response.body.getReader();
+      } catch (error) {
+        logger.error('Failed to get response reader, falling back to text()', { error: error.message });
+        
+        // Fallback: use response.text() instead of streaming
+        const responseText = await response.text();
+        const lines = responseText.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            
+            if (data === '[DONE]') {
+              // Send completion message
+              socket.emit('true_streaming_message', {
+                type: 'done',
+                sessionId,
+                messageId,
+                totalChunks: chunkCount,
+                timestamp: new Date().toISOString()
+              });
+              return;
+            }
+
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices[0]?.delta?.content;
+              
+              if (content) {
+                chunkCount++;
+                
+                // Send token immediately to client
+                socket.emit('true_streaming_message', {
+                  type: 'token',
+                  sessionId,
+                  messageId,
+                  token: content,
+                  chunkIndex: chunkCount,
+                  timestamp: new Date().toISOString()
+                });
+              }
+            } catch (parseError) {
+              // Skip malformed JSON
+              logger.debug('Skipping malformed JSON chunk', { data });
+            }
+          }
+        }
+        
+        // Send completion message
+        socket.emit('true_streaming_message', {
+          type: 'done',
+          sessionId,
+          messageId,
+          totalChunks: chunkCount,
+          timestamp: new Date().toISOString()
+        });
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let chunkCount = 0;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            break;
+          }
+
+          // Decode the chunk and add to buffer
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+
+          // Process complete lines
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              
+              if (data === '[DONE]') {
+                // Send completion message
+                socket.emit('true_streaming_message', {
+                  type: 'done',
+                  sessionId,
+                  messageId,
+                  totalChunks: chunkCount,
+                  timestamp: new Date().toISOString()
+                });
+                return;
+              }
+
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices[0]?.delta?.content;
+                
+                if (content) {
+                  chunkCount++;
+                  
+                  // Send token immediately to client
+                  socket.emit('true_streaming_message', {
+                    type: 'token',
+                    sessionId,
+                    messageId,
+                    token: content,
+                    chunkIndex: chunkCount,
+                    timestamp: new Date().toISOString()
+                  });
+                }
+              } catch (parseError) {
+                // Skip malformed JSON
+                logger.debug('Skipping malformed JSON chunk', { data });
+              }
+            }
+          }
+        }
+      } finally {
+        if (reader) {
+          reader.releaseLock();
+        }
+      }
+
+      // Clean up
+      clearTimeout(timeoutId);
+      activeStreams.delete(messageId);
+
+      logger.info('True streaming completed', { 
+        messageId, 
+        sessionId, 
+        totalChunks: chunkCount
+      });
+
+    } catch (error) {
+      logger.error('Error in true streaming request', { 
+        error: error.message, 
+        messageId: request.messageId,
+        socketId: socket.id 
+      });
+      
+      // Clean up on error
+      activeStreams.delete(request.messageId);
+      
+      socket.emit('true_streaming_message', {
+        type: 'error',
+        sessionId: request.sessionId,
+        messageId: request.messageId,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  socket.on('streaming_request', async (request, callback) => {
+    try {
+      const { userMessage, sessionContext, conversationHistory, sessionId, messageId } = request;
+      
+      logger.info('Streaming request received', { sessionId, messageId, socketId: socket.id });
+      
+      // Send acknowledgment
+      callback({ success: true });
+      
+      // Send start message immediately
+      socket.emit('streaming_message', {
+        type: 'start',
+        sessionId,
+        messageId,
+        timestamp: new Date().toISOString()
+      });
+
+
+
+      // Create abort controller for this stream with timeout
+      const abortController = new AbortController();
+      activeStreams.set(messageId, { socket, abortController });
+      
+      // Set timeout to abort if response takes too long (30 seconds)
+      const timeoutId = setTimeout(() => {
+        abortController.abort();
+        logger.warn('Stream timeout', { messageId });
+      }, 30000);
+
+      // Prepare messages for OpenAI
+      const messages = [
+        { role: 'system', content: buildSystemPrompt(sessionContext) },
+        ...conversationHistory,
+        { role: 'user', content: userMessage }
+      ];
+
+      // Create streaming response with optimized parameters
+      const stream = await openai.chat.completions.create({
+        model: 'gpt-4',
+        messages,
+        temperature: 0.3,
+        max_tokens: 800, // Slightly reduced for faster response
+        stream: true,
+        presence_penalty: 0.1, // Slight penalty for repetition
+        frequency_penalty: 0.1, // Slight penalty for repetition
+      }, {
+        signal: abortController.signal
+      });
+
+      let fullResponse = '';
+      let structuredData = null;
+      let chunkCount = 0;
+
+      let jsonBuffer = '';
+      let userResponse = '';
+      
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content;
+        if (content) {
+          fullResponse += content;
+          jsonBuffer += content;
+          chunkCount++;
+          
+          // Extract and send only the response text in real-time
+          try {
+            // Look for the response field and extract new content
+            const responseMatch = jsonBuffer.match(/"response"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+            if (responseMatch) {
+              const extractedResponse = responseMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+              
+              // Only send new content that hasn't been sent before
+              if (extractedResponse.length > userResponse.length) {
+                const newContent = extractedResponse.substring(userResponse.length);
+                userResponse = extractedResponse;
+                
+                // Send only the user-facing text (no JSON)
+                socket.emit('streaming_message', {
+                  type: 'chunk',
+                  sessionId,
+                  messageId,
+                  content: newContent,
+                  chunkIndex: chunkCount,
+                  timestamp: new Date().toISOString()
+                });
+              }
+            }
+          } catch (parseError) {
+            // If parsing fails, don't send anything yet
+          }
+        }
+      }
+
+      // Try to parse structured data from full response
+      try {
+        const jsonMatch = fullResponse.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          structuredData = JSON.parse(cleanJsonResponse(jsonMatch[0]));
+          // Extract the final user response from structured data
+          userResponse = structuredData.response || userResponse;
+        }
+      } catch (parseError) {
+        logger.warn('Could not parse structured data from response', { messageId });
+      }
+
+      // Send end message
+      socket.emit('streaming_message', {
+        type: 'end',
+        sessionId,
+        messageId,
+        structuredData,
+        totalChunks: chunkCount,
+        timestamp: new Date().toISOString()
+      });
+
+      // Clean up
+      clearTimeout(timeoutId);
+      activeStreams.delete(messageId);
+
+      logger.info('Streaming completed', { 
+        messageId, 
+        sessionId, 
+        totalChunks: chunkCount,
+        responseLength: fullResponse.length 
+      });
+
+    } catch (error) {
+      logger.error('Error in streaming request', { 
+        error: error.message, 
+        messageId: request.messageId,
+        socketId: socket.id 
+      });
+      
+      // Clean up on error
+      activeStreams.delete(request.messageId);
+      
+      socket.emit('streaming_message', {
+        type: 'error',
+        sessionId: request.sessionId,
+        messageId: request.messageId,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  socket.on('cancel_stream', (messageId) => {
+    const stream = activeStreams.get(messageId);
+    if (stream) {
+      stream.abortController.abort();
+      activeStreams.delete(messageId);
+      logger.info('Stream cancelled by client', { messageId });
+    }
+  });
+
+  socket.on('disconnect', (reason) => {
+    logger.info('Client disconnected', { socketId: socket.id, reason });
+    
+    // Clean up any active streams for this socket
+    for (const [messageId, stream] of activeStreams.entries()) {
+      if (stream.socket.id === socket.id) {
+        stream.abortController.abort();
+        activeStreams.delete(messageId);
+      }
+    }
+  });
+});
+
+// Health check endpoint (no authentication required)
+app.get('/health', (req, res) => {
+  console.log('Health check requested');
+  res.setHeader('Content-Type', 'application/json');
+  res.status(200).json({ 
+    status: 'OK', 
+    message: 'Aluuna Services Server is running',
+    services: {
+      tts: 'active',
+      streaming: 'active',
+      websocket: 'active'
+    },
+    version: '2.0.0'
+  });
+});
+
+// Get available voices (requires authentication)
+app.get('/voices', authenticateApiKey, async (req, res) => {
+  try {
+    const [result] = await ttsClient.listVoices({});
+    const voices = result.voices;
+    res.json({ voices });
+  } catch (error) {
+    logger.error('Error fetching voices:', error);
+    res.status(500).json({ error: 'Failed to fetch voices' });
+  }
+});
+
+// Helpful GET endpoint for TTS (returns usage instructions)
+app.get('/tts', (req, res) => {
+  res.status(405).json({
+    error: 'Method not allowed',
+    message: 'TTS endpoint requires POST request with JSON body and API key',
+    example: {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': 'your-api-key-here'
+      },
+      body: {
+        text: 'Hello world',
+        voice: {
+          languageCode: 'en-US',
+          name: 'en-US-Standard-A',
+          ssmlGender: 'NEUTRAL'
+        }
+      }
+    }
+  });
+});
+
+// Text-to-Speech endpoint (requires authentication)
+app.post('/tts', authenticateApiKey, async (req, res) => {
+  console.log('🎵 TTS request received:', { text: req.body.text?.substring(0, 50) + '...', voice: req.body.voice });
+  
+  try {
+    const { text, voice, languageCode, audioConfig } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    // Default configuration
+    const request = {
+      input: { text },
+      voice: voice || {
+        languageCode: languageCode || 'en-US',
+        name: 'en-US-Standard-A',
+        ssmlGender: 'NEUTRAL'
+      },
+      audioConfig: audioConfig || {
+        audioEncoding: 'MP3',
+        speakingRate: 1.0,
+        pitch: 0.0,
+        volumeGainDb: 0.0
+      }
+    };
+
+    // Perform the text-to-speech request
+    const [response] = await client.synthesizeSpeech(request);
+    const audioContent = response.audioContent;
+
+    // Convert audio content to base64 for direct transmission
+    const audioBase64 = audioContent.toString('base64');
+    
+    res.json({
+      success: true,
+      audioData: audioBase64,
+      audioFormat: 'base64',
+      text,
+      voice: request.voice,
+      audioConfig: request.audioConfig
+    });
+
+  } catch (error) {
+    console.error('TTS Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to synthesize speech',
+      details: error.message 
+    });
+  }
+});
+
+// Chat API endpoint for fallback (requires authentication)
+app.post('/api/chat', authenticateApiKey, async (req, res) => {
+  try {
+    const { messages, model = 'gpt-4', temperature = 0.3, max_tokens = 1000 } = req.body;
+
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ error: 'Messages array is required' });
+    }
+
+    logger.info('📝 Chat API request received', { 
+      messageCount: messages.length,
+      model,
+      temperature 
+    });
+
+    // Create chat completion
+    const completion = await openai.chat.completions.create({
+      model,
+      messages,
+      temperature,
+      max_tokens,
+    });
+
+    const response = completion.choices[0]?.message?.content || '';
+
+    logger.info('📝 Chat API response completed', { 
+      responseLength: response.length 
+    });
+
+    res.json({
+      success: true,
+      choices: completion.choices,
+      usage: completion.usage,
+    });
+
+  } catch (error) {
+    logger.error('Chat API Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate chat response',
+      details: error.message 
+    });
+  }
+});
+
+// SSML Text-to-Speech endpoint (requires authentication)
+app.post('/tts/ssml', authenticateApiKey, async (req, res) => {
+  try {
+    const { ssml, voice, audioConfig } = req.body;
+
+    if (!ssml) {
+      return res.status(400).json({ error: 'SSML is required' });
+    }
+
+    // Default configuration
+    const request = {
+      input: { ssml },
+      voice: voice || {
+        languageCode: 'en-US',
+        name: 'en-US-Standard-A',
+        ssmlGender: 'NEUTRAL'
+      },
+      audioConfig: audioConfig || {
+        audioEncoding: 'MP3',
+        speakingRate: 1.0,
+        pitch: 0.0,
+        volumeGainDb: 0.0
+      }
+    };
+
+    // Perform the text-to-speech request
+    const [response] = await client.synthesizeSpeech(request);
+    const audioContent = response.audioContent;
+
+    // Convert audio content to base64 for direct transmission
+    const audioBase64 = audioContent.toString('base64');
+    
+    res.json({
+      success: true,
+      audioData: audioBase64,
+      audioFormat: 'base64',
+      ssml,
+      voice: request.voice,
+      audioConfig: request.audioConfig
+    });
+
+  } catch (error) {
+    console.error('SSML TTS Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to synthesize SSML speech',
+      details: error.message 
+    });
+  }
+});
+
+// Start server (only for local development)
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Aluuna TTS Server running on port ${PORT}`);
+    console.log(`📡 Health check: http://localhost:${PORT}/health`);
+    console.log(`🎵 TTS endpoint: http://localhost:${PORT}/tts`);
+    console.log(`🔊 SSML endpoint: http://localhost:${PORT}/tts/ssml`);
+    console.log(`🌐 Server bound to all interfaces (IPv4 & IPv6)`);
+    console.log(`🔑 API Key required for protected endpoints`);
+  });
+}
+
+// Helper functions
+function buildSystemPrompt(sessionContext) {
+  return `You are Aluuna, a therapeutic AI companion. Build rapport first, then offer insights. Remember their story and care about their journey.
+
+RESPONSE FORMAT - Return ONLY this JSON:
+{
+  "session_memory_commit": "Brief insight from this interaction",
+  "long_term_memory_commit": "Significant growth or pattern to remember",
+  "response": "Your empathetic therapeutic response",
+  "wellness_judgement": "stable|growing|anxious|overwhelmed|crisis|n/a",
+  "emotional_state": "calm|anxious|sad|angry|excited|numb|overwhelmed|hopeful|confused|n/a",
+  "therapeutic_focus": "validation|exploration|challenge|containment|integration|celebration|n/a",
+  "session_timing": "start|early|mid|late|ending",
+  "new_memory_inference": {
+    "inner_parts": {
+      "name": "inner part name or null",
+      "role": "Protector|Exile|Manager|Firefighter|Self|Wounded|Creative|Sage",
+      "tone": "harsh|gentle|sad|angry|protective|neutral|loving|fearful|n/a",
+      "description": "brief description of this inner part",
+      "needs": "what this part is trying to protect or achieve"
+    },
+    "new_stuck_point": "stuck belief or behavior pattern or null",
+    "crisis_signal": false,
+    "value_conflict": "conflict between values and actions or null",
+    "coping_tool_used": "tool name or null",
+    "new_shadow_theme": "unconscious pattern or shadow work theme or null",
+    "new_pattern_loop": "recurring behavioral pattern or cycle or null",
+    "new_mantra": "personal affirmation or mantra that would help the user or null",
+    "new_relationship": {
+      "name": "person's name or null",
+      "role": "Partner|Child|Parent|Sibling|Friend|Colleague|Other",
+      "notes": "brief notes about the relationship or null",
+      "attachment_style": "secure|anxious|avoidant|disorganized|n/a"
+    },
+    "growth_moment": "moment of insight, breakthrough, or progress or null",
+    "therapeutic_theme": "core theme or pattern emerging in this session or null",
+    "emotional_need": "underlying emotional need being expressed or null",
+    "next_step": "suggested next step for their growth journey or null"
+  }
+}`;
+}
+
+function cleanJsonResponse(response) {
+  const jsonStart = response.indexOf('{');
+  if (jsonStart > 0) {
+    response = response.substring(jsonStart);
+  }
+  
+  const jsonEnd = response.lastIndexOf('}');
+  if (jsonEnd !== -1 && jsonEnd < response.length - 1) {
+    response = response.substring(0, jsonEnd + 1);
+  }
+  
+  return response
+    .replace(/,\s*}/g, '}')
+    .replace(/,\s*]/g, ']')
+    .replace(/true or false/g, 'false')
+    .replace(/null or ".*?"/g, 'null')
+    .replace(/"null"/g, 'null')
+    .replace(/"true"/g, 'true')
+    .replace(/"false"/g, 'false');
+}
+
+// Start server (for both local and Railway)
+if (process.env.NODE_ENV !== 'production') {
+  server.listen(PORT, '0.0.0.0', () => {
+    logger.info(`🚀 Aluuna Services Server running on port ${PORT}`);
+    logger.info(`📡 Health check: http://localhost:${PORT}/health`);
+    logger.info(`🎵 TTS endpoint: http://localhost:${PORT}/tts`);
+    logger.info(`🔊 SSML endpoint: http://localhost:${PORT}/tts/ssml`);
+    logger.info(`🔌 WebSocket: ws://localhost:${PORT}`);
+    logger.info(`🌐 Server bound to all interfaces (IPv4 & IPv6)`);
+    logger.info(`🔑 API Key required for protected endpoints`);
+  });
+} else {
+  // For Railway production - ensure server is listening
+  server.listen(PORT, '0.0.0.0', () => {
+    logger.info(`🚀 Aluuna Services Server running on Railway port ${PORT}`);
+    logger.info(`🔌 WebSocket server active`);
+  });
+}
+
+module.exports = { app, server, io }; 

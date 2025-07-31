@@ -1,0 +1,21 @@
+{
+  "name": "aluuna-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "mobile": "turbo run dev --filter=@aluuna/mobile",
+    "services": "turbo run dev --filter=@aluuna/services"
+  },
+  "devDependencies": {
+    "turbo": "^1.10.0"
+  }
+}

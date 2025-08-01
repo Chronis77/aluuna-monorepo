@@ -90,9 +90,6 @@ Use this memory not as a database, but as a living understanding of who they are
                 "You should see a real therapist",
                 "I can't provide medical advice",
                 "I'm not a professional",
-                "===METADATA_START===",
-                "EOF!!!",
-                "METADATA_START"
             ],
 
             therapeuticApproach: `You embody an integrative therapeutic approach that weaves together:
@@ -367,13 +364,8 @@ Remember: You are not just responding—you are co-creating a sacred space for h
         const sessionSpecificGuidance = this.buildSessionSpecificGuidance(sessionType, emotionalAnalysis, sessionProgress);
         const memoryIntegration = this.buildMemoryIntegration(userProfile, emotionalAnalysis);
 
-        return `*** CRITICAL RESPONSE FORMAT - YOU MUST FOLLOW THIS EXACTLY ***
-
-1. Write your empathetic therapeutic response to the user (natural, conversational, helpful)
-2. On a new line, write exactly: "===METADATA_START==="
-3. On the next line, write this JSON metadata (do not include in user response):
-
-{
+        // Build the prompt as a single string to avoid array processing issues
+        const metadataTemplate = `{
   "session_memory_commit": "Brief insight from this interaction",
   "long_term_memory_commit": "Significant growth or pattern to remember",
   "wellness_judgement": "stable|growing|anxious|overwhelmed|crisis|n/a",
@@ -406,57 +398,137 @@ Remember: You are not just responding—you are co-creating a sacred space for h
     "emotional_need": "underlying emotional need being expressed or null",
     "next_step": "suggested next step for their growth journey or null"
   }
-}
+}`;
+
+        // Build the prompt as a single, monolithic string to avoid any processing issues
+        const responseGuidelines = rules.responseGuidelines.map(guideline => `- ${guideline}`).join('\n');
+        const sessionContextRules = rules.sessionContextRules.map(rule => `- ${rule}`).join('\n');
+        const forbiddenResponses = rules.forbiddenResponses.map(response => `- "${response}"`).join('\n');
+        const userProfileJson = JSON.stringify(userProfile, null, 2);
+        const currentContextJson = JSON.stringify(currentContext, null, 2);
+
+        // Build everything as one large string literal
+        return `================================================================================
+CRITICAL RESPONSE FORMAT - YOU MUST FOLLOW THIS EXACTLY
+================================================================================
+
+*** ABSOLUTELY CRITICAL: You MUST follow this format for EVERY response ***
+
+1. Write your empathetic therapeutic response to the user (natural, conversational, helpful)
+2. On a new line, write exactly: "===METADATA_START==="
+3. On the next line, write this JSON metadata (do not include in user response):
+
+METADATA TEMPLATE:
+${metadataTemplate}
 
 *** MANDATORY: You MUST include "===METADATA_START===" after your response. This is not optional. ***
+*** WARNING: If you do not include the metadata, the system will not work properly. ***
+*** EVERY SINGLE RESPONSE must end with "===METADATA_START===" followed by the JSON metadata. ***
+
+================================================================================
+SYSTEM PERSONALITY & IDENTITY
+================================================================================
 
 ${rules.systemPersonality}
 
+================================================================================
+MEMORY CONTEXT & USER HISTORY
+================================================================================
+
 ${rules.memoryContext}
+
+================================================================================
+EMOTIONAL ATTUNEMENT FRAMEWORK
+================================================================================
 
 ${rules.emotionalAttunement}
 
+================================================================================
+CRISIS PROTOCOL & SAFETY
+================================================================================
+
 ${rules.crisisProtocol}
+
+================================================================================
+PERSONALIZATION FRAMEWORK
+================================================================================
 
 ${rules.personalizationFramework}
 
-CURRENT SESSION ANALYSIS:
+================================================================================
+CURRENT SESSION ANALYSIS
+================================================================================
+
 ${emotionalAnalysis}
 
 THERAPEUTIC FOCUS: ${therapeuticFocus}
 SESSION TYPE: ${sessionType}
 
-SESSION PROGRESS:
+================================================================================
+SESSION PROGRESS & TIMING
+================================================================================
+
 ${sessionProgress}
 
 TIMING GUIDANCE:
 ${timingGuidance}
 
-PERSONALIZED APPROACH:
+================================================================================
+PERSONALIZED APPROACH
+================================================================================
+
 ${personalizedApproach}
 
-SESSION-SPECIFIC GUIDANCE:
+================================================================================
+SESSION-SPECIFIC GUIDANCE
+================================================================================
+
 ${sessionSpecificGuidance}
 
-MEMORY INTEGRATION:
+================================================================================
+MEMORY INTEGRATION
+================================================================================
+
 ${memoryIntegration}
 
-THERAPEUTIC APPROACH:
+================================================================================
+THERAPEUTIC APPROACH & MODALITIES
+================================================================================
+
 ${rules.therapeuticApproach}
 
-RESPONSE GUIDELINES:
-${rules.responseGuidelines.map(guideline => `- ${guideline}`).join('\n')}
+================================================================================
+RESPONSE GUIDELINES
+================================================================================
 
-SESSION CONTEXT RULES:
-${rules.sessionContextRules.map(rule => `- ${rule}`).join('\n')}
+${responseGuidelines}
 
-FORBIDDEN RESPONSES:
-${rules.forbiddenResponses.map(response => `- "${response}"`).join('\n')}
+================================================================================
+SESSION CONTEXT RULES
+================================================================================
 
-USER CONTEXT: ${JSON.stringify(userProfile)}
-CURRENT SESSION CONTEXT: ${JSON.stringify(currentContext)}
+${sessionContextRules}
 
-Remember: You are not just responding—you are co-creating a sacred space for healing and self-discovery. Every interaction is an opportunity to help them return to their own truth and wisdom.`;
+================================================================================
+FORBIDDEN RESPONSES
+================================================================================
+
+${forbiddenResponses}
+
+================================================================================
+USER CONTEXT DATA
+================================================================================
+
+USER PROFILE: ${userProfileJson}
+CURRENT SESSION CONTEXT: ${currentContextJson}
+
+================================================================================
+CORE REMINDER
+================================================================================
+
+Remember: You are not just responding—you are co-creating a sacred space for healing and self-discovery. Every interaction is an opportunity to help them return to their own truth and wisdom.
+
+*** FINAL REMINDER: EVERY response MUST end with "===METADATA_START===" followed by the JSON metadata. This is absolutely required for the system to function properly. ***`;
     }
 
     // Analyze user's current emotional state from their message

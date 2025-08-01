@@ -7,6 +7,7 @@ import { MemoryProcessingService, ProcessingContext } from './memoryProcessingSe
 import { SessionContinuityManager } from './sessionContinuityManager';
 import { SessionService } from './sessionService';
 
+
 export interface Message {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -386,21 +387,24 @@ export class OpenAIService {
       // Build the system prompt using AIResponseRules
       const systemPrompt = AIResponseRulesService.buildDynamicPrompt(sessionContext, userMessage);
       
-      console.log('🔍 System prompt being sent to server:', systemPrompt.substring(0, 500) + '...');
+      // Encode the system prompt with Base64 for secure transmission
+      const encodedSystemPrompt = btoa(unescape(encodeURIComponent(systemPrompt)));
+      
+      console.log('🔍 System prompt length:', systemPrompt.length, 'characters');
+      console.log('🔍 Encoded system prompt length:', encodedSystemPrompt.length, 'characters');
       console.log('🔍 System prompt contains delimiter instructions:', systemPrompt.includes('===METADATA_START==='));
       console.log('🔍 System prompt contains "CRITICAL" instruction:', systemPrompt.includes('CRITICAL'));
-      console.log('🔍 System prompt length:', systemPrompt.length, 'characters');
       console.log('🔍 System prompt contains "MANDATORY":', systemPrompt.includes('MANDATORY'));
-      console.log('🔍 ABOUT TO PREPARE WEBSOCKET REQUEST');
 
-      // Prepare WebSocket request
+      // Prepare WebSocket request with encoded system prompt
       const wsRequest = {
         userMessage,
         sessionContext,
         conversationHistory,
         sessionId,
         messageId,
-        systemPrompt,
+        systemPrompt: encodedSystemPrompt,
+        systemPromptEncoded: true,
         temperature: 0.3
       };
 
@@ -421,8 +425,10 @@ export class OpenAIService {
 
       return new Promise((resolve, reject) => {
         // Set up WebSocket message handler
-        const handleStreamingMessage = (message: any) => {
+        const handleStreamingMessage = async (message: any) => {
           if (message.messageId !== messageId) return;
+
+          console.log('🔍 RECEIVED MESSAGE:', JSON.stringify(message, null, 2));
 
           switch (message.type) {
             case 'start':
@@ -432,31 +438,54 @@ export class OpenAIService {
 
             case 'token':
               console.log('🔍 TOKEN CASE REACHED - token:', JSON.stringify(message.token));
-              // Check if adding this token would create the delimiter
-              const potentialResponse = fullResponse + message.token;
               
-              // Debug: Log every 10th token to see what's coming in
-              if (Math.random() < 0.1) {
-                console.log('🔍 Token received:', JSON.stringify(message.token));
+              // Use the token directly (no encryption for streaming)
+              let decryptedToken = message.token;
+              
+              // Check if adding this token would create the delimiter
+              const potentialResponse = fullResponse + decryptedToken;
+              
+              // Debug: Log every token to see what's coming in
+              console.log('🔍 Token received:', JSON.stringify(message.token));
+              console.log('🔍 Current fullResponse length:', fullResponse.length);
+              console.log('🔍 Current fullResponse ends with:', fullResponse.substring(Math.max(0, fullResponse.length - 20)));
+              console.log('🔍 Potential response ends with:', potentialResponse.substring(Math.max(0, potentialResponse.length - 30)));
+              
+              // Check if we're building up the delimiter
+              if (message.token.includes('===') || message.token.includes('METADATA') || message.token.includes('START')) {
+                console.log('🔍 POTENTIAL DELIMITER TOKEN DETECTED:', JSON.stringify(message.token));
+                console.log('🔍 Full potential response:', potentialResponse);
               }
               
               // Update fullResponse for tracking
               fullResponse = potentialResponse;
               
               // Check for complete delimiter
+              console.log('🔍 Checking for delimiter in potential response...');
+              console.log('🔍 Looking for: ===METADATA_START===');
+              console.log('🔍 Potential response contains delimiter:', potentialResponse.includes('===METADATA_START==='));
+              
               if (potentialResponse.includes('===METADATA_START===')) {
+                console.log('🎉 DELIMITER FOUND! 🎉');
+                console.log('🔍 Delimiter found at index:', potentialResponse.indexOf('===METADATA_START==='));
+                
                 if (!metadataFound) {
                   metadataFound = true;
+                  console.log('🔍 Setting metadataFound = true');
                   
                   // Find where the delimiter starts
                   const delimiterIndex = potentialResponse.indexOf('===METADATA_START===');
+                  console.log('🔍 Delimiter index:', delimiterIndex);
                   
                   // Only send the part before the delimiter
                   const contentBeforeDelimiter = potentialResponse.substring(0, delimiterIndex);
+                  console.log('🔍 Content before delimiter length:', contentBeforeDelimiter.length);
+                  console.log('🔍 Content before delimiter:', contentBeforeDelimiter);
                   
                   // Send any remaining content before delimiter
                   if (contentBeforeDelimiter.length > displayContent.length) {
                     const remainingContent = contentBeforeDelimiter.substring(displayContent.length);
+                    console.log('🔍 Remaining content to send:', remainingContent);
                     if (remainingContent.length > 0) {
                       callbacks.onChunk?.(remainingContent, false);
                     }
@@ -464,9 +493,11 @@ export class OpenAIService {
                   
                   // Set the final user response
                   userResponse = contentBeforeDelimiter.trim();
+                  console.log('🔍 Set userResponse to:', userResponse);
                   
                   // Mark as complete immediately
                   callbacks.onChunk?.('', true);
+                  console.log('🔍 Called onChunk with empty string and isComplete=true');
                   
                   // Don't send any more tokens to UI
                   break;
@@ -499,10 +530,14 @@ export class OpenAIService {
                 );
                 
                 if (hasPartialDelimiter) {
-                  console.log('🔍 Detected partial delimiter, holding token:', message.token);
-                  console.log('🔍 Current potentialResponse ends with:', potentialResponse.substring(Math.max(0, potentialResponse.length - 30)));
+                  console.log('🔍 PARTIAL DELIMITER DETECTED!');
+                  console.log('🔍 Token being held:', message.token);
+                  console.log('🔍 Potential response ends with:', potentialResponse.substring(Math.max(0, potentialResponse.length - 30)));
+                  console.log('🔍 Matching partial delimiter found');
                   // Don't send this token to UI, but keep it in fullResponse for tracking
                   break;
+                } else {
+                  console.log('🔍 No partial delimiter detected, proceeding normally');
                 }
                 
                 // Debug: Log if we see any "===" patterns
@@ -670,6 +705,15 @@ export class OpenAIService {
     } catch (error) {
       console.error('❌ Error processing metadata:', error);
     }
+  }
+
+  // Base64 encoding/decoding methods for secure transmission
+  private static encodeBase64(text: string): string {
+    return btoa(unescape(encodeURIComponent(text)));
+  }
+
+  private static decodeBase64(encodedText: string): string {
+    return decodeURIComponent(escape(atob(encodedText)));
   }
 
   // Build enhanced example that incorporates new onboarding fields

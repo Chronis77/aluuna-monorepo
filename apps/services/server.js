@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const winston = require('winston');
 const OpenAI = require('openai');
+const crypto = require('crypto');
 // Use native fetch (available in Node.js 18+) instead of node-fetch
 require('dotenv').config();
 
@@ -148,16 +149,47 @@ io.on('connection', (socket) => {
         conversationHistoryLength: request.conversationHistory?.length
       });
       
-      const { 
-        userMessage, 
-        sessionContext, 
-        conversationHistory, 
-        sessionId, 
+            const {
+        userMessage,
+        sessionContext,
+        conversationHistory,
+        sessionId,
         messageId,
         systemPrompt,
-        temperature = 0.3,
-        maxTokens = 800
+        systemPromptEncoded = false,
+        temperature = 0.3
       } = request;
+      
+      // Decode the system prompt if it's encoded
+      let decryptedSystemPrompt = systemPrompt;
+      if (systemPromptEncoded) {
+        try {
+          decryptedSystemPrompt = decodeURIComponent(escape(atob(systemPrompt)));
+          console.log('🔍 SERVER: Successfully decoded Base64 system prompt');
+        } catch (error) {
+          console.error('🔍 SERVER: Error decoding system prompt:', error);
+          decryptedSystemPrompt = systemPrompt; // Fallback to original
+        }
+      }
+
+      // Log what we received from the client
+      console.log('🔍 SERVER: Received request from client:');
+      console.log('🔍 SERVER: userMessage:', userMessage);
+      console.log('🔍 SERVER: sessionId:', sessionId);
+      console.log('🔍 SERVER: messageId:', messageId);
+      console.log('🔍 SERVER: systemPromptEncoded:', systemPromptEncoded);
+      console.log('🔍 SERVER: original systemPrompt length:', systemPrompt?.length);
+      console.log('🔍 SERVER: decrypted systemPrompt length:', decryptedSystemPrompt?.length);
+      console.log('🔍 SERVER: systemPrompt contains "CRITICAL":', decryptedSystemPrompt?.includes('CRITICAL'));
+      console.log('🔍 SERVER: systemPrompt contains "METADATA_START":', decryptedSystemPrompt?.includes('METADATA_START'));
+      console.log('🔍 SERVER: conversationHistory length:', conversationHistory?.length);
+      console.log('🔍 SERVER: temperature:', temperature);
+      
+      // Log the COMPLETE system prompt
+      console.log('🔍 SERVER: COMPLETE SYSTEM PROMPT:');
+      console.log('---START OF SYSTEM PROMPT---');
+      console.log(decryptedSystemPrompt);
+      console.log('---END OF SYSTEM PROMPT---');
       
       logger.info('True streaming request received', { sessionId, messageId, socketId: socket.id });
       
@@ -184,10 +216,20 @@ io.on('connection', (socket) => {
 
       // Prepare messages for OpenAI
       const messages = [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: decryptedSystemPrompt },
         ...conversationHistory,
         { role: 'user', content: userMessage }
       ];
+
+      // Log what we're sending to OpenAI
+      console.log('🔍 SERVER: Sending to OpenAI:');
+      console.log('🔍 SERVER: Messages count:', messages.length);
+      console.log('🔍 SERVER: System message length:', messages[0]?.content?.length);
+      console.log('🔍 SERVER: System message starts with:', messages[0]?.content?.substring(0, 100));
+      console.log('🔍 SERVER: System message contains "CRITICAL":', messages[0]?.content?.includes('CRITICAL'));
+      console.log('🔍 SERVER: System message contains "METADATA_START":', messages[0]?.content?.includes('METADATA_START'));
+      console.log('🔍 SERVER: User message:', messages[messages.length - 1]?.content);
+      console.log('🔍 SERVER: Temperature:', temperature);
 
       const startTime = Date.now();
       
@@ -204,7 +246,6 @@ io.on('connection', (socket) => {
             model: 'gpt-4o',
             messages,
             temperature,
-            max_tokens: maxTokens,
             stream: true,
             presence_penalty: 0.1,
             frequency_penalty: 0.1,
@@ -282,6 +323,15 @@ io.on('connection', (socket) => {
         }
         
         // Send completion message
+        console.log('🔍 SERVER: Stream completed, total chunks:', chunkCount);
+        
+        // Log the COMPLETE AI response
+        console.log('🔍 SERVER: COMPLETE AI RESPONSE:');
+        console.log('---START OF AI RESPONSE---');
+        console.log(completeResponse);
+        console.log('---END OF AI RESPONSE---');
+        console.log('🔍 SERVER: Response contains delimiter:', completeResponse.includes('===METADATA_START==='));
+        
         socket.emit('true_streaming_message', {
           type: 'done',
           sessionId,
@@ -295,6 +345,7 @@ io.on('connection', (socket) => {
       const decoder = new TextDecoder();
       let buffer = '';
       let chunkCount = 0;
+      let completeResponse = ''; // Track the complete response
 
       try {
         while (true) {
@@ -317,6 +368,15 @@ io.on('connection', (socket) => {
               const data = line.slice(6);
               
               if (data === '[DONE]') {
+                console.log('🔍 SERVER: Stream completed, total chunks:', chunkCount);
+                
+                // Log the COMPLETE AI response
+                console.log('🔍 SERVER: COMPLETE AI RESPONSE:');
+                console.log('---START OF AI RESPONSE---');
+                console.log(completeResponse);
+                console.log('---END OF AI RESPONSE---');
+                console.log('🔍 SERVER: Response contains delimiter:', completeResponse.includes('===METADATA_START==='));
+                
                 socket.emit('true_streaming_message', {
                   type: 'done',
                   sessionId,
@@ -333,6 +393,14 @@ io.on('connection', (socket) => {
                 
                 if (content) {
                   chunkCount++;
+                  completeResponse += content; // Build complete response
+                  
+                  // Log only delimiter-related tokens
+                  if (content.includes('===') || content.includes('METADATA') || content.includes('START')) {
+                    console.log('🔍 SERVER: DELIMITER TOKEN DETECTED:', JSON.stringify(content));
+                  }
+                  
+                  // Send token directly to client (no encryption for streaming)
                   socket.emit('true_streaming_message', {
                     type: 'token',
                     sessionId,
@@ -425,7 +493,6 @@ io.on('connection', (socket) => {
         model: 'gpt-4',
         messages,
         temperature: 0.3,
-        max_tokens: 800, // Slightly reduced for faster response
         stream: true,
         presence_penalty: 0.1, // Slight penalty for repetition
         frequency_penalty: 0.1, // Slight penalty for repetition
@@ -657,7 +724,7 @@ app.post('/tts', authenticateApiKey, async (req, res) => {
 // Chat API endpoint for fallback (requires authentication)
 app.post('/api/chat', authenticateApiKey, async (req, res) => {
   try {
-    const { messages, model = 'gpt-4', temperature = 0.3, max_tokens = 1000 } = req.body;
+    const { messages, model = 'gpt-4', temperature = 0.3 } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: 'Messages array is required' });
@@ -674,7 +741,6 @@ app.post('/api/chat', authenticateApiKey, async (req, res) => {
       model,
       messages,
       temperature,
-      max_tokens,
     });
 
     const response = completion.choices[0]?.message?.content || '';
@@ -761,6 +827,15 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Helper functions
+
+// Base64 encoding/decoding functions for secure transmission
+function encodeBase64(text) {
+  return Buffer.from(text, 'utf8').toString('base64');
+}
+
+function decodeBase64(encodedText) {
+  return Buffer.from(encodedText, 'base64').toString('utf8');
+}
 
 function cleanJsonResponse(response) {
   const jsonStart = response.indexOf('{');

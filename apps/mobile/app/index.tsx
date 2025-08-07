@@ -22,7 +22,7 @@ export default function Index() {
   // If we have a session, user is authenticated
   if (session) {
     console.log('✅ User authenticated, redirecting to session');
-    return <Redirect href="/session" />;
+    return <Redirect href="/conversation" />;
   }
 
   // If no session and still loading, show AluunaLoader

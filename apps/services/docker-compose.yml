@@ -1,48 +1,69 @@
 version: '3.8'
 
 services:
-  aluuna-tts:
+  # Aluuna Services (Bun-based)
+  aluuna-services:
     build: .
-    container_name: aluuna-tts-server
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
     environment:
-      - NODE_ENV=production
-      - PORT=3000
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=${PORT:-3000}
+      - HOST=${HOST:-0.0.0.0}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ALUUNA_APP_API_KEY=${ALUUNA_APP_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:19006}
+      - CORS_CREDENTIALS=${CORS_CREDENTIALS:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-900000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-10485760}
+      - UPLOAD_PATH=${UPLOAD_PATH:-./uploads}
+      - HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-30000}
     volumes:
-      - ./google-creds.json:/app/google-creds.json:ro
-      - audio_files:/app/audio
-    restart: unless-stopped
-    networks:
-      - aluuna-network
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  # Optional: Nginx reverse proxy for production
-  nginx:
-    image: nginx:alpine
-    container_name: aluuna-tts-nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
+      - .:/app
+      - /app/node_modules
+      - /app/node_modules/.prisma
     depends_on:
-      - aluuna-tts
-    restart: unless-stopped
+      - redis
     networks:
       - aluuna-network
+    restart: unless-stopped
+
+  # Redis Cache (Optional - can also use external Redis)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - aluuna-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # Redis Commander (optional - for Redis management)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:${REDIS_HOST:-redis}:${REDIS_PORT:-6379}
+    ports:
+      - "${REDIS_COMMANDER_PORT:-8081}:8081"
+    depends_on:
+      - redis
+    networks:
+      - aluuna-network
+    restart: unless-stopped
     profiles:
-      - production
+      - local-redis
 
 volumes:
-  audio_files:
-    driver: local
+  redis_data:
 
 networks:
   aluuna-network:

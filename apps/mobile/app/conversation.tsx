@@ -25,16 +25,16 @@ import { Sidebar } from '../components/Sidebar';
 import { ThreeDotLoader } from '../components/ThreeDotLoader';
 import { Toast } from '../components/ui/Toast';
 import { VoiceInput } from '../components/VoiceInput';
+import { useAuth } from '../context/AuthContext';
 import { config } from '../lib/config';
 import { ContextService } from '../lib/contextService';
-import { MemoryProcessingService, ProcessingContext } from '../lib/memoryProcessingService';
+import { MemoryProcessingService } from '../lib/memoryProcessingService';
 import { Message as OpenAIMessage, OpenAIService } from '../lib/openaiService';
-import { SessionContinuityManager } from '../lib/sessionContinuityManager';
-import { SessionService } from '../lib/sessionService';
+import { ConversationService } from '../lib/conversationService';
 import { speechManager } from '../lib/speechManager';
-import { supabase } from '../lib/supabase';
+import { trpcClient } from '../lib/trpcClient';
 import { voicePreferencesService } from '../lib/voicePreferencesService';
-import { SessionGroup } from '../types/database';
+import { Conversation } from '../types/database';
 
 const { width: screenWidth } = Dimensions.get('window');
 const SIDEBAR_WIDTH = screenWidth * 0.8;
@@ -51,13 +51,14 @@ interface Message {
 
 export default function SessionScreen() {
   const router = useRouter();
+  const { user, session } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
-  const [sessionGroups, setSessionGroups] = useState<SessionGroup[]>([]);
-  const [currentSessionGroup, setCurrentSessionGroup] = useState<SessionGroup | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
@@ -89,10 +90,12 @@ export default function SessionScreen() {
   const profileMenuTranslateX = useRef(new Animated.Value(screenWidth)).current;
   const flatListRef = useRef<FlatList>(null);
 
-  // Initialize the session screen
+  // Initialize the session screen when user is available
   useEffect(() => {
-    initializeSession();
-  }, []);
+    if (user) {
+      initializeSession();
+    }
+  }, [user]);
 
   // Load dialogue mode setting
   useEffect(() => {
@@ -280,75 +283,57 @@ export default function SessionScreen() {
       
       // Test database connection first
       console.log('🔍 Testing database connection...');
-      await SessionService.testDatabaseConnection();
+      await ConversationService.testDatabaseConnection();
       
       // Check authentication state
       console.log('🔐 Checking authentication state...');
-      const { data: { session } } = await supabase.auth.getSession();
-      console.log('📋 Current session:', session ? 'Active' : 'None');
       
-      // Get current user with proper error handling
-      let user;
-      try {
-        const { data: { user: currentUser }, error } = await supabase.auth.getUser();
-        if (error) {
-          console.error('❌ Authentication error:', error);
-          router.replace('/login' as any);
-          return;
-        }
-        
-        if (!currentUser) {
-          console.log('⚠️ No authenticated user found, redirecting to login');
-          router.replace('/login' as any);
-          return;
-        }
-        
-        user = currentUser;
-        setCurrentUserId(user.id);
-        console.log('✅ User authenticated:', user.id);
-      } catch (authError) {
-        console.error('❌ Error getting current user:', authError);
+      if (!user) {
+        console.log('⚠️ No authenticated user found, redirecting to login');
         router.replace('/login' as any);
         return;
       }
+      
+      setCurrentUserId(user.id);
+      console.log('✅ User authenticated:', user.id);
 
-      // Load session groups
-      const groups = await SessionService.getSessionGroups(user.id);
-      setSessionGroups(groups);
+      // Load conversations
+      const groups = await ConversationService.getConversations(user.id, session?.token);
+      setConversations(groups);
 
-      // Get or create current session group
-      let currentGroup = await SessionService.getLatestSessionGroup(user.id);
+      // Get or create current conversation
+      let currentGroup = await ConversationService.getLatestConversation(user.id, session?.token);
       
       if (!currentGroup) {
-        // Create new session group without title (will be generated later)
+        // Create new conversation without title (will be generated later)
         const contextJson = ContextService.buildContextJson();
-        currentGroup = await SessionService.createSessionGroup(user.id, '', contextJson);
-        setSessionGroups(prev => [currentGroup!, ...prev]);
+        currentGroup = await ConversationService.createConversation(user.id, '', contextJson, session?.token);
+        setConversations(prev => [currentGroup!, ...prev]);
       }
 
-      setCurrentSessionGroup(currentGroup);
+      setCurrentConversation(currentGroup);
 
-      // Load messages for current session group
+      // Load messages for current conversation
       await loadMessages(currentGroup.id);
 
-      // Generate default title if session doesn't have one
+      // Generate default title if conversation doesn't have one
       if (!currentGroup.title || currentGroup.title.trim() === '') {
         const defaultTitle = ContextService.generateSessionTitle(new Date(currentGroup.started_at));
-        console.log('Generating default title for existing session:', defaultTitle);
-        console.log('Session group ID:', currentGroup.id);
-        console.log('Session started at:', currentGroup.started_at);
+        console.log('Generating default title for existing conversation:', defaultTitle);
+        console.log('Conversation ID:', currentGroup.id);
+        console.log('Conversation started at:', currentGroup.started_at);
         
         // Test RLS policies first
-        await SessionService.testRLSPolicies(currentGroup.id);
+        await ConversationService.testRLSPolicies(currentGroup.id);
         
         try {
-          await SessionService.updateSessionGroup(currentGroup.id, {
+          await ConversationService.updateConversation(currentGroup.id, {
             title: defaultTitle,
-          });
+          }, session?.token);
 
           // Update local state
-          setCurrentSessionGroup(prev => prev ? { ...prev, title: defaultTitle } : null);
-          setSessionGroups(prev => 
+          setCurrentConversation(prev => prev ? { ...prev, title: defaultTitle } : null);
+          setConversations(prev => 
             prev.map(group => 
               group.id === currentGroup.id 
                 ? { ...group, title: defaultTitle }
@@ -356,26 +341,26 @@ export default function SessionScreen() {
             )
           );
           
-          console.log('✅ Successfully updated session group with default title');
+          console.log('✅ Successfully updated conversation with default title');
         } catch (error) {
-          console.error('❌ Failed to update session group with default title:', error);
+          console.error('❌ Failed to update conversation with default title:', error);
         }
       }
 
-      // Add initial greeting only if this is a completely new session group with no messages
-      const dbSessions = await SessionService.getSessions(currentGroup.id);
+      // Add initial greeting only if this is a completely new conversation with no messages
+      const dbSessions = await ConversationService.getConversationMessagesForConversation(currentGroup.id, session?.token);
       const hasExistingMessages = dbSessions.some(session => 
         session.input_transcript || session.gpt_response
       );
       
-      console.log('Session initialization check:');
-      console.log('- Session group ID:', currentGroup.id);
-      console.log('- Total sessions in group:', dbSessions.length);
+      console.log('Conversation initialization check:');
+      console.log('- Conversation ID:', currentGroup.id);
+      console.log('- Total messages in conversation:', dbSessions.length);
       console.log('- Has existing messages:', hasExistingMessages);
-      console.log('- Sessions with content:', dbSessions.filter(s => s.input_transcript || s.gpt_response).length);
+      console.log('- Messages with content:', dbSessions.filter(s => s.input_transcript || s.gpt_response).length);
       
       if (!hasExistingMessages) {
-        console.log('✅ New session group detected, adding greeting message');
+        console.log('✅ New conversation detected, adding greeting message');
         const sessionContext = ContextService.buildSessionContext();
         const greeting = ContextService.getSessionGreeting(sessionContext);
         
@@ -389,9 +374,9 @@ export default function SessionScreen() {
         setMessages(prev => [...prev, greetingMessage]);
         
         // Save greeting to database
-        await SessionService.addSession(currentGroup.id, user.id, greeting, greeting);
+        await ConversationService.addConversationMessage(currentGroup.id, user.id, greeting, greeting);
       } else {
-        console.log('✅ Existing session group with messages, skipping greeting');
+        console.log('✅ Existing conversation with messages, skipping greeting');
         console.log('- Will continue from where user left off');
       }
 
@@ -407,11 +392,11 @@ export default function SessionScreen() {
     }
   };
 
-  const loadMessages = async (sessionGroupId: string) => {
+  const loadMessages = async (conversationId: string) => {
     try {
-      console.log('Loading messages for session group:', sessionGroupId);
-      const dbSessions = await SessionService.getSessions(sessionGroupId);
-      console.log('Found', dbSessions.length, 'sessions for this group');
+      console.log('Loading messages for conversation:', conversationId);
+      const dbSessions = await ConversationService.getConversationMessagesForConversation(conversationId);
+      console.log('Found', dbSessions.length, 'messages for this conversation');
       
       const messageList: Message[] = [];
       
@@ -450,9 +435,9 @@ export default function SessionScreen() {
   };
 
   const handleSendMessage = async () => {
-    if (!inputText.trim() || !currentSessionGroup || !currentUserId || isSending) return;
+    if (!inputText.trim() || !currentConversation || !currentUserId || isSending) return;
 
-    console.log('Sending message to session group:', currentSessionGroup.id, 'Title:', currentSessionGroup.title);
+    console.log('Sending message to conversation:', currentConversation.id, 'Title:', currentConversation.title);
 
     const userMessage = inputText.trim();
     setInputText('');
@@ -460,7 +445,7 @@ export default function SessionScreen() {
 
     try {
       // Save user message to database first
-      const sessionRecord = await SessionService.addSession(currentSessionGroup.id, currentUserId, userMessage);
+      const sessionRecord = await ConversationService.addConversationMessage(currentConversation.id, currentUserId, userMessage);
 
       // Add user message to UI
       const userMessageObj: Message = {
@@ -486,7 +471,7 @@ export default function SessionScreen() {
       scrollToActualBottom();
 
       // Load fresh messages from database to ensure we have the correct conversation history
-      const dbSessions = await SessionService.getSessions(currentSessionGroup.id);
+      const dbSessions = await ConversationService.getConversationMessagesForConversation(currentConversation.id);
       const conversationHistory: OpenAIMessage[] = [];
       
       dbSessions.forEach(session => {
@@ -519,7 +504,7 @@ export default function SessionScreen() {
             focus_areas: []
           }
         }),
-        sessionId: currentSessionGroup.id
+        sessionId: currentConversation.id
       };
       
       // Add user ID to the context for metadata processing
@@ -562,7 +547,7 @@ export default function SessionScreen() {
         userMessage,
         sessionContext,
         conversationHistory,
-        currentSessionGroup!.id,
+        currentConversation!.id,
         streamingMessageId,
         sessionRecordId,
         {
@@ -643,11 +628,11 @@ export default function SessionScreen() {
 
   const processMemoryAndMetadata = async (aiResponse: string, sessionContext: any, sessionRecordId: string) => {
     try {
-      // Update the session with AI response
-      await SessionService.updateSessionWithResponse(sessionRecordId, aiResponse);
+      // Update the conversation message with AI response
+      await ConversationService.updateConversationMessageWithResponse(sessionRecordId, aiResponse);
 
       // Load fresh conversation history for metadata update
-      const dbSessions = await SessionService.getSessions(currentSessionGroup!.id);
+      const dbSessions = await ConversationService.getConversationMessagesForConversation(currentConversation!.id);
       const conversationHistory: OpenAIMessage[] = [];
       
       dbSessions.forEach(session => {
@@ -659,11 +644,11 @@ export default function SessionScreen() {
         }
       });
 
-      // Update session group title and summary immediately after AI response
+      // Update conversation title and summary immediately after AI response
       const updatedConversationHistory = [...conversationHistory, { role: 'assistant' as const, content: aiResponse }];
       
       // Always update metadata after receiving AI response
-      await updateSessionGroupMetadata(updatedConversationHistory);
+      await updateConversationMetadata(updatedConversationHistory);
 
       // Check for crisis flags after processing
       await checkCrisisFlags();
@@ -675,7 +660,7 @@ export default function SessionScreen() {
 
   // New function to handle dialogue mode transcription
   const handleDialogueTranscription = async (text: string) => {
-    if (!currentSessionGroup || !currentUserId || isSending) return;
+    if (!currentConversation || !currentUserId || isSending) return;
 
     console.log('Dialogue mode: Processing transcribed text:', text);
 
@@ -685,7 +670,7 @@ export default function SessionScreen() {
 
     try {
       // Save user message to database first
-      const sessionRecord = await SessionService.addSession(currentSessionGroup.id, currentUserId, userMessage);
+      const sessionRecord = await ConversationService.addConversationMessage(currentConversation.id, currentUserId, userMessage);
 
       // Add user message to UI
       const userMessageObj: Message = {
@@ -713,7 +698,7 @@ export default function SessionScreen() {
       }, 200);
 
       // Load fresh messages from database
-      const dbSessions = await SessionService.getSessions(currentSessionGroup.id);
+      const dbSessions = await ConversationService.getConversationMessagesForConversation(currentConversation.id);
       const conversationHistory: OpenAIMessage[] = [];
       
       dbSessions.forEach(session => {
@@ -728,10 +713,10 @@ export default function SessionScreen() {
       // Add current user message to history
       conversationHistory.push({ role: 'user' as const, content: userMessage });
 
-      // Build session context with session ID for continuity tracking
+      // Build session context with conversation ID for continuity tracking
       const sessionContext = {
         ...ContextService.buildSessionContext(),
-        sessionId: currentSessionGroup?.id || null
+        sessionId: currentConversation?.id || null
       };
 
       // Use WebSocket streaming for dialogue mode
@@ -776,29 +761,29 @@ export default function SessionScreen() {
     }
   };
 
-  const updateSessionGroupMetadata = async (conversationHistory: OpenAIMessage[]) => {
-    if (!currentSessionGroup) return;
+  const updateConversationMetadata = async (conversationHistory: OpenAIMessage[]) => {
+    if (!currentConversation) return;
 
     try {
-      console.log('Updating session metadata for group:', currentSessionGroup.id);
+      console.log('Updating conversation metadata for conversation:', currentConversation.id);
       
       // Check if we should generate AI title and summary (after 4 back-and-forth interactions)
       const shouldGenerateAI = OpenAIService.shouldSummarizeSession(conversationHistory);
-      const hasNoTitle = !currentSessionGroup.title || currentSessionGroup.title.trim() === '';
-      const hasDefaultTitle = currentSessionGroup.title && (
-        currentSessionGroup.title.includes("Today's Session") || 
-        currentSessionGroup.title.includes("Yesterday's Session") ||
-        currentSessionGroup.title.includes("Session")
+      const hasNoTitle = !currentConversation.title || currentConversation.title.trim() === '';
+      const hasDefaultTitle = currentConversation.title && (
+        currentConversation.title.includes("Today's Session") || 
+        currentConversation.title.includes("Yesterday's Session") ||
+        currentConversation.title.includes("Session")
       );
-      const hasAISummary = currentSessionGroup.context_summary && currentSessionGroup.context_summary.trim() !== '';
+      const hasAISummary = currentConversation.context_summary && currentConversation.context_summary.trim() !== '';
       
-      console.log('Session metadata update check:');
+      console.log('Conversation metadata update check:');
       console.log('- Should generate AI:', shouldGenerateAI);
       console.log('- Has no title:', hasNoTitle);
       console.log('- Has default title:', hasDefaultTitle);
       console.log('- Has AI summary:', hasAISummary);
-      console.log('- Current title:', currentSessionGroup.title);
-      console.log('- Current summary:', currentSessionGroup.context_summary);
+      console.log('- Current title:', currentConversation.title);
+      console.log('- Current summary:', currentConversation.context_summary);
       console.log('- Conversation history length:', conversationHistory.length);
       
       if (shouldGenerateAI && (hasNoTitle || hasDefaultTitle) && !hasAISummary) {
@@ -813,19 +798,19 @@ export default function SessionScreen() {
         console.log('Generated new title:', newTitle);
         console.log('Generated new summary:', newSummary);
 
-        // Update session group
-        await SessionService.updateSessionGroup(currentSessionGroup.id, {
+        // Update conversation
+        await ConversationService.updateConversation(currentConversation.id, {
           title: newTitle,
           context_summary: newSummary,
         });
 
-        console.log('Successfully updated session group in database');
+        console.log('Successfully updated conversation in database');
 
         // Update local state
-        setCurrentSessionGroup(prev => prev ? { ...prev, title: newTitle, context_summary: newSummary } : null);
-        setSessionGroups(prev => 
+        setCurrentConversation(prev => prev ? { ...prev, title: newTitle, context_summary: newSummary } : null);
+        setConversations(prev => 
           prev.map(group => 
-            group.id === currentSessionGroup.id 
+            group.id === currentConversation.id 
               ? { ...group, title: newTitle, context_summary: newSummary }
               : group
           )
@@ -834,34 +819,34 @@ export default function SessionScreen() {
         console.log('Successfully updated local state');
       } else if (hasNoTitle && !hasAISummary) {
         // Generate default title based on date if no title exists and no AI summary
-        const defaultTitle = ContextService.generateSessionTitle(new Date(currentSessionGroup.started_at));
+        const defaultTitle = ContextService.generateSessionTitle(new Date(currentConversation.started_at));
         console.log('Generating default title:', defaultTitle);
         
-        await SessionService.updateSessionGroup(currentSessionGroup.id, {
+        await ConversationService.updateConversation(currentConversation.id, {
           title: defaultTitle,
         });
 
         // Update local state
-        setCurrentSessionGroup(prev => prev ? { ...prev, title: defaultTitle } : null);
-        setSessionGroups(prev => 
+        setCurrentConversation(prev => prev ? { ...prev, title: defaultTitle } : null);
+        setConversations(prev => 
           prev.map(group => 
-            group.id === currentSessionGroup.id 
+            group.id === currentConversation.id 
               ? { ...group, title: defaultTitle }
               : group
           )
         );
 
         console.log('Successfully updated with default title');
-      } else {
-        if (hasAISummary) {
-          console.log('Session already has AI-generated summary, skipping metadata update');
-        } else {
-          console.log('Session already has title, skipping metadata update');
+              } else {
+          if (hasAISummary) {
+            console.log('Conversation already has AI-generated summary, skipping metadata update');
+          } else {
+            console.log('Conversation already has title, skipping metadata update');
+          }
         }
-      }
 
     } catch (error) {
-      console.error('Error updating session metadata:', error);
+      console.error('Error updating conversation metadata:', error);
       console.error('Error details:', JSON.stringify(error, null, 2));
     }
   };
@@ -872,22 +857,17 @@ export default function SessionScreen() {
     try {
       setIsCreatingSession(true);
       
-      // Create new session group without title (will be generated later)
+      // Create new conversation without title (will be generated later)
       const contextJson = ContextService.buildContextJson();
-      const newSessionGroup = await SessionService.createSessionGroup(currentUserId, '', contextJson);
+      const newConversation = await ConversationService.createConversation(currentUserId, '', contextJson);
 
       // Create session continuity record for the new session
-      try {
-        await SessionContinuityManager.initializeSession(currentUserId, newSessionGroup.id);
-        console.log('📊 Created session continuity record for new session:', newSessionGroup.id);
-      } catch (error) {
-        console.error('Error creating session continuity record:', error);
-        // Don't fail the session creation if continuity tracking fails
-      }
+      // Temporarily disabled to fix circular dependency
+      console.log('📊 Session continuity initialization temporarily disabled');
 
       // Update state
-      setSessionGroups(prev => [newSessionGroup, ...prev]);
-      setCurrentSessionGroup(newSessionGroup);
+      setConversations(prev => [newConversation, ...prev]);
+      setCurrentConversation(newConversation);
       
       // Clear messages and add initial greeting
       const sessionContext = ContextService.buildSessionContext();
@@ -903,7 +883,7 @@ export default function SessionScreen() {
       setMessages([greetingMessage]);
       
       // Save greeting to database
-      await SessionService.addSession(newSessionGroup.id, currentUserId, greeting, greeting);
+      await ConversationService.addConversationMessage(newConversation.id, currentUserId, greeting, greeting);
 
       // Close sidebar with animation
       Animated.spring(sidebarTranslateX, {
@@ -926,57 +906,42 @@ export default function SessionScreen() {
     }
   };
 
-  const handleSessionGroupSelect = async (sessionGroup: SessionGroup) => {
-    console.log('Selecting session group:', sessionGroup.id, 'Title:', sessionGroup.title);
-    setCurrentSessionGroup(sessionGroup);
+  const handleConversationSelect = async (conversation: Conversation) => {
+    console.log('Selecting conversation:', conversation.id, 'Title:', conversation.title);
+    setCurrentConversation(conversation);
     
     // Clear current messages first
     setMessages([]);
     
-    // Load messages for the selected session group
-    await loadMessages(sessionGroup.id);
+    // Load messages for the selected conversation
+    await loadMessages(conversation.id);
     
-    // Ensure session continuity record exists for this session group
-    try {
-      const resumeContext = await SessionContinuityManager.checkSessionResume(sessionGroup.id);
-      if (!resumeContext.isResuming && resumeContext.sessionPhase === 'start') {
-        // No continuity record exists, create one
-        await SessionContinuityManager.trackSessionProgress(
-          sessionGroup.id,
-          0, // Will be updated when messages are loaded
-          'start',
-          'rapport building',
-          'neutral'
-        );
-        console.log('📊 Created missing session continuity record for existing session:', sessionGroup.id);
-      }
-    } catch (error) {
-      console.error('Error checking/creating session continuity record:', error);
-      // Don't fail session selection if continuity tracking fails
-    }
+    // Ensure session continuity record exists for this conversation
+    // Temporarily disabled to fix circular dependency
+    console.log('📊 Session continuity check temporarily disabled');
     
-    // Generate default title if session doesn't have one
-    if (!sessionGroup.title || sessionGroup.title.trim() === '') {
-      const defaultTitle = ContextService.generateSessionTitle(new Date(sessionGroup.started_at));
-      console.log('🚨🚨🚨🚨🚨Generating default title for selected session:', defaultTitle);
-      console.log('Session group ID:', sessionGroup.id);
+    // Generate default title if conversation doesn't have one
+    if (!conversation.title || conversation.title.trim() === '') {
+      const defaultTitle = ContextService.generateSessionTitle(new Date(conversation.started_at));
+      console.log('🚨🚨🚨🚨🚨Generating default title for selected conversation:', defaultTitle);
+      console.log('Conversation ID:', conversation.id);
       
       try {
-        await SessionService.updateSessionGroup(sessionGroup.id, {
+        await ConversationService.updateConversation(conversation.id, {
           title: defaultTitle,
         });
 
-        // Update local state
-        setCurrentSessionGroup(prev => prev ? { ...prev, title: defaultTitle } : null);
-        setSessionGroups(prev => 
-          prev.map(group => 
-            group.id === sessionGroup.id 
-              ? { ...group, title: defaultTitle }
-              : group
-          )
-        );
+                  // Update local state
+          setCurrentConversation(prev => prev ? { ...prev, title: defaultTitle } : null);
+          setConversations(prev =>
+            prev.map(group =>
+              group.id === conversation.id
+                ? { ...group, title: defaultTitle }
+                : group
+            )
+          );
         
-        console.log('✅ Successfully updated selected session group with default title');
+                  console.log('✅ Successfully updated selected conversation with default title');
       } catch (error) {
         console.error('❌ Failed to update selected session group with default title:', error);
       }
@@ -1045,15 +1010,17 @@ export default function SessionScreen() {
   };
 
   const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
+    try {
+      // TODO: Implement logout with tRPC when ready
+      console.log('Logging out...');
+      router.replace('/login' as any);
+    } catch (error) {
+      console.error('Error during logout:', error);
       setToast({
         visible: true,
-        message: error.message,
+        message: 'Error during logout',
         type: 'error',
       });
-    } else {
-      router.replace('/login' as any);
     }
   };
 
@@ -1115,18 +1082,7 @@ export default function SessionScreen() {
     if (!currentUserId) return;
 
     try {
-      const { data: crisisFlags, error } = await supabase
-        .from('crisis_flags')
-        .select('*')
-        .eq('user_id', currentUserId)
-        .eq('reviewed', false)
-        .order('triggered_at', { ascending: false })
-        .limit(1);
-
-      if (error) {
-        console.error('Error checking crisis flags:', error);
-        return;
-      }
+      const crisisFlags = await trpcClient.getCrisisFlags(currentUserId);
 
       if (crisisFlags && crisisFlags.length > 0) {
         console.log('🚨 Crisis flag detected for user:', currentUserId);
@@ -1148,8 +1104,8 @@ export default function SessionScreen() {
     try {
       const [memoryProfile, insights, innerParts] = await Promise.all([
         MemoryProcessingService.getMemoryProfile(currentUserId),
-        MemoryProcessingService.getUserInsights(currentUserId, 5),
-        MemoryProcessingService.getUserInnerParts(currentUserId)
+        trpcClient.getInsights(currentUserId),
+        trpcClient.getInnerParts(currentUserId)
       ]);
 
       return {
@@ -1356,9 +1312,9 @@ export default function SessionScreen() {
           }}
         >
           <Sidebar
-            sessionGroups={sessionGroups}
-            currentSessionGroup={currentSessionGroup}
-            onSessionGroupSelect={handleSessionGroupSelect}
+            conversations={conversations}
+            currentConversation={currentConversation}
+            onConversationSelect={handleConversationSelect}
             onNewSession={handleNewSession}
             isCreatingSession={isCreatingSession}
           />

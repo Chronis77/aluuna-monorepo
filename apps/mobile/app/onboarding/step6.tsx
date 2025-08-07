@@ -6,7 +6,7 @@ import { AluunaLoader } from '../../components/AluunaLoader';
 import { ProgressDots } from '../../components/onboarding/ProgressDots';
 import { Toast } from '../../components/ui/Toast';
 import { useOnboarding } from '../../context/OnboardingContext';
-import { supabase } from '../../lib/supabase';
+import { trpcClient } from '../../lib/trpcClient';
 
 export default function OnboardingStep6() {
   const router = useRouter();
@@ -181,10 +181,10 @@ export default function OnboardingStep6() {
       console.log('Onboarding data:', onboardingData);
 
       // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      const user = await trpcClient.getCurrentUser();
       
-      if (userError || !user) {
-        console.error('User not authenticated:', userError);
+      if (!user) {
+        console.error('User not authenticated');
         setToast({
           visible: true,
           message: 'Authentication error. Please try again.',
@@ -229,31 +229,20 @@ export default function OnboardingStep6() {
 
       console.log('Profile data to insert:', profileData);
 
-      // Check if memory profile already exists
-      const { data: existingProfile } = await supabase
-        .from('memory_profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
-
-      let profileError;
-      if (existingProfile) {
-        // Update existing profile
-        const { error } = await supabase
-          .from('memory_profiles')
-          .update(profileData)
-          .eq('user_id', user.id);
-        profileError = error;
-      } else {
-        // Insert new profile
-        const { error } = await supabase
-          .from('memory_profiles')
-          .insert([profileData]);
-        profileError = error;
-      }
-
-      if (profileError) {
-        console.error('Error creating memory profile:', profileError);
+      // Create or update memory profile
+      try {
+        const result = await trpcClient.upsertMemoryProfile(profileData);
+        if (!result.success) {
+          console.error('Error creating memory profile:', result);
+          setToast({
+            visible: true,
+            message: 'Error creating profile. Please try again.',
+            type: 'error',
+          });
+          return;
+        }
+      } catch (error) {
+        console.error('Error creating memory profile:', error);
         setToast({
           visible: true,
           message: 'Error creating profile. Please try again.',
@@ -264,87 +253,52 @@ export default function OnboardingStep6() {
 
       // Create value compass entry
       if (onboardingData.step5?.coreValues && onboardingData.step5.coreValues.length > 0) {
-        // Check if value compass already exists
-        const { data: existingValueCompass } = await supabase
-          .from('value_compass')
-          .select('id')
-          .eq('user_id', user.id)
-          .single();
-
-        let valueError;
-        if (existingValueCompass) {
-          // Update existing value compass
-          const { error } = await supabase
-            .from('value_compass')
-            .update({
-              core_values: onboardingData.step5.coreValues,
-              anti_values: [], // Could be populated later
-              narrative: onboardingData.step5.motivationForJoining || '',
-              last_reflected_at: new Date().toISOString()
-            })
-            .eq('user_id', user.id);
-          valueError = error;
-        } else {
-          // Insert new value compass
-          const { error } = await supabase
-            .from('value_compass')
-            .insert([{
-              id: 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                const r = Math.random() * 16 | 0;
-                const v = c === 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-              }),
-              user_id: user.id,
-              core_values: onboardingData.step5.coreValues,
-              anti_values: [], // Could be populated later
-              narrative: onboardingData.step5.motivationForJoining || '',
-              last_reflected_at: new Date().toISOString()
-            }]);
-          valueError = error;
-        }
-
-        if (valueError) {
-          console.error('Error creating value compass:', valueError);
+        try {
+          const result = await trpcClient.upsertValueCompass(
+            user.id,
+            onboardingData.step5.coreValues,
+            [], // anti_values - could be populated later
+            onboardingData.step5.motivationForJoining || ''
+          );
+          if (!result.success) {
+            console.error('Error creating value compass:', result);
+          }
+        } catch (error) {
+          console.error('Error creating value compass:', error);
         }
       }
 
       // Create user preferences
-      const { error: preferencesError } = await supabase
-        .from('user_preferences')
-        .upsert([{
-          user_id: user.id,
+      try {
+        const result = await trpcClient.upsertUserPreferences(user.id, {
           show_text_response: true,
           play_audio_response: true,
           preferred_therapist_name: 'Therapist',
           daily_reminder_time: null, // Could be set later
           timezone: 'UTC' // Default, could be detected
-        }], {
-          onConflict: 'user_id'
         });
-
-      if (preferencesError) {
-        console.error('Error creating user preferences:', preferencesError);
+        if (!result.success) {
+          console.error('Error creating user preferences:', result);
+        }
+      } catch (error) {
+        console.error('Error creating user preferences:', error);
       }
 
       // Create initial emotional trend entry
       if (onboardingData.step1?.moodScore) {
-        const { error: moodError } = await supabase
-          .from('emotional_trends')
-          .insert([{
-            id: 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-              const r = Math.random() * 16 | 0;
-              const v = c === 'x' ? r : (r & 0x3 | 0x8);
-              return v.toString(16);
-            }),
-            user_id: user.id,
-            mood_score: onboardingData.step1.moodScore,
-            mood_label: onboardingData.step1.emotionalStates?.[0] || 'neutral',
-            notes: 'Initial mood from onboarding',
-            recorded_at: new Date().toISOString()
-          }]);
-
-        if (moodError) {
-          console.error('Error creating emotional trend:', moodError);
+        try {
+          const result = await trpcClient.createEmotionalTrend(
+            user.id,
+            onboardingData.step1.moodScore,
+            onboardingData.step1.emotionalStates || [],
+            onboardingData.step1.suicidalThoughts,
+            'Initial mood from onboarding'
+          );
+          if (!result.success) {
+            console.error('Error creating emotional trend:', result);
+          }
+        } catch (error) {
+          console.error('Error creating emotional trend:', error);
         }
       }
 
@@ -407,13 +361,13 @@ export default function OnboardingStep6() {
       };
 
       // Update memory profile with additional data
-      const { error: updateError } = await supabase
-        .from('memory_profiles')
-        .update(additionalProfileData)
-        .eq('user_id', user.id);
-
-      if (updateError) {
-        console.error('Error updating memory profile with additional data:', updateError);
+      try {
+        const result = await trpcClient.upsertMemoryProfile(additionalProfileData);
+        if (!result.success) {
+          console.error('Error updating memory profile with additional data:', result);
+        }
+      } catch (error) {
+        console.error('Error updating memory profile with additional data:', error);
       }
 
       // Success
@@ -428,7 +382,7 @@ export default function OnboardingStep6() {
 
       // Navigate to main app after a short delay
       setTimeout(() => {
-        router.replace('/session' as any);
+        router.replace('/conversation' as any);
       }, 2000);
 
     } catch (error) {

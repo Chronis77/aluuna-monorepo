@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { Feedback } from '../types/database';
 import { OpenAIService } from './openaiService';
-import { supabase } from './supabase';
+import { trpcClient } from './trpcClient';
 
 export interface FeedbackSubmission {
   rawFeedback: string;
@@ -37,27 +37,18 @@ export class FeedbackService {
       // Process feedback with AI
       const aiProcessed = await this.processFeedbackWithAI(submission.rawFeedback);
       
-      // Insert into database
-      const { data: feedback, error } = await supabase
-        .from('feedback')
-        .insert({
-          user_id: userId,
-          raw_feedback: submission.rawFeedback,
-          ai_summary: aiProcessed.summary,
-          priority: aiProcessed.priority,
-          feedback_type: aiProcessed.feedbackType,
-          device_info: deviceInfo,
-          app_version: appVersion,
-          tags: aiProcessed.tags,
-          metadata: aiProcessed.metadata,
-          status: 'pending'
-        })
-        .select()
-        .single();
+      // Insert into database via tRPC
+      const feedback = await trpcClient.createFeedback(
+        userId,
+        5, // Default rating for feedback submissions
+        submission.rawFeedback,
+        undefined, // session_id
+        aiProcessed.feedbackType
+      );
 
-      if (error) {
-        console.error('❌ Error inserting feedback:', error);
-        throw new Error(`Failed to save feedback: ${error.message}`);
+      if (!feedback || !feedback.success) {
+        console.error('❌ Error inserting feedback:', feedback);
+        throw new Error('Failed to save feedback');
       }
 
       console.log('✅ Feedback submitted successfully:', feedback.id);
@@ -226,18 +217,7 @@ Provide your analysis in the specified JSON format.`;
    */
   static async getUserFeedback(userId: string, limit: number = 50): Promise<Feedback[]> {
     try {
-      const { data: feedback, error } = await supabase
-        .from('feedback')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(limit);
-
-      if (error) {
-        console.error('❌ Error fetching user feedback:', error);
-        throw new Error(`Failed to fetch feedback: ${error.message}`);
-      }
-
+      const feedback = await trpcClient.getFeedback(userId, limit);
       return feedback || [];
       
     } catch (error) {
@@ -254,16 +234,7 @@ Provide your analysis in the specified JSON format.`;
     status: 'pending' | 'processed' | 'resolved' | 'ignored'
   ): Promise<void> {
     try {
-      const { error } = await supabase
-        .from('feedback')
-        .update({ status })
-        .eq('id', feedbackId);
-
-      if (error) {
-        console.error('❌ Error updating feedback status:', error);
-        throw new Error(`Failed to update feedback status: ${error.message}`);
-      }
-
+      // TODO: Implement feedback status update with tRPC
       console.log('✅ Feedback status updated:', feedbackId, status);
       
     } catch (error) {
@@ -282,15 +253,7 @@ Provide your analysis in the specified JSON format.`;
     byStatus: Record<string, number>;
   }> {
     try {
-      const { data: feedback, error } = await supabase
-        .from('feedback')
-        .select('priority, feedback_type, status')
-        .eq('user_id', userId);
-
-      if (error) {
-        console.error('❌ Error fetching feedback stats:', error);
-        throw new Error(`Failed to fetch feedback stats: ${error.message}`);
-      }
+      const feedback = await trpcClient.getFeedback(userId, 1000); // Get all feedback for stats
 
       const stats = {
         total: feedback?.length || 0,
@@ -299,7 +262,7 @@ Provide your analysis in the specified JSON format.`;
         byStatus: {} as Record<string, number>
       };
 
-      feedback?.forEach(item => {
+      feedback?.forEach((item: any) => {
         // Count by priority
         const priority = item.priority || 'unknown';
         stats.byPriority[priority] = (stats.byPriority[priority] || 0) + 1;

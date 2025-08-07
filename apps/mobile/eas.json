@@ -7,6 +7,15 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SERVER_URL": "https://aluuna-services-production.up.railway.app",
+        "EXPO_DEV_SERVER_URL": "http://172.28.152.95:3000",
+        "EXPO_PUBLIC_OPENAI_API_KEY": "OPENAI_API_KEY",
+        "EXPO_PUBLIC_ALUUNA_APP_API_KEY": "ALUUNA_APP_API_KEY",               
+        "EXPO_PUBLIC_LOADING_TIMEOUT": "5000",
+        "EXPO_PUBLIC_TOAST_DURATION": "3000",
+        "EXPO_PUBLIC_SESSION_TIMEOUT": "3000"
+      },
       "ios": {
         "resourceClass": "m-medium",
         "autoIncrement": true
@@ -17,6 +26,15 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SERVER_URL": "https://aluuna-services-production.up.railway.app",
+        "EXPO_DEV_SERVER_URL": "http://172.28.152.95:3000",
+        "EXPO_PUBLIC_OPENAI_API_KEY": "OPENAI_API_KEY",
+        "EXPO_PUBLIC_ALUUNA_APP_API_KEY": "ALUUNA_APP_API_KEY",               
+        "EXPO_PUBLIC_LOADING_TIMEOUT": "5000",
+        "EXPO_PUBLIC_TOAST_DURATION": "3000",
+        "EXPO_PUBLIC_SESSION_TIMEOUT": "3000"
+      },
       "ios": {
         "resourceClass": "m-medium",
         "autoIncrement": true
@@ -26,6 +44,20 @@
       }
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_SERVER_URL": "https://aluuna-services-production.up.railway.app",
+        "EXPO_PUBLIC_OPENAI_API_KEY": "OPENAI_API_KEY",
+        "EXPO_PUBLIC_ALUUNA_APP_API_KEY": "ALUUNA_APP_API_KEY",
+        "EXPO_PUBLIC_SUPABASE_URL": "SUPABASE_URL",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "SUPABASE_ANON_KEY",
+        "EXPO_PUBLIC_TTS_SERVER_URL": "https://aluuna-services-production.up.railway.app",
+        "EXPO_PUBLIC_TTS_TIMEOUT": "10000",
+        "EXPO_PUBLIC_LOADING_TIMEOUT": "5000",
+        "EXPO_PUBLIC_TOAST_DURATION": "3000",
+        "EXPO_PUBLIC_SESSION_TIMEOUT": "3000",
+        "EXPO_PUBLIC_WEBSOCKET_URL": "https://aluuna-services-production.up.railway.app",
+        "EXPO_PUBLIC_WEBSOCKET_TIMEOUT": "20000"
+      },
       "ios": {
         "resourceClass": "m-medium",
         "autoIncrement": true

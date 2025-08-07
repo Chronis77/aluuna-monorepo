@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { trpcClient } from './trpcClient';
 
 export interface MemoryUpdate {
   user_id: string;
@@ -23,14 +23,10 @@ export class MemoryUpdateService {
       console.log('Update data:', update);
 
       // Get current memory profile
-      const { data: currentProfile, error: fetchError } = await supabase
-        .from('memory_profiles')
-        .select('*')
-        .eq('user_id', update.user_id)
-        .single();
+      const currentProfile = await trpcClient.getMemoryProfile(update.user_id);
 
-      if (fetchError) {
-        console.error('Error fetching current memory profile:', fetchError);
+      if (!currentProfile) {
+        console.error('Error fetching current memory profile');
         return false;
       }
 
@@ -151,13 +147,13 @@ export class MemoryUpdateService {
 
       // Only update if there are changes
       if (Object.keys(updateData).length > 1) { // More than just updated_at
-        const { error: updateError } = await supabase
-          .from('memory_profiles')
-          .update(updateData)
-          .eq('user_id', update.user_id);
+        const result = await trpcClient.upsertMemoryProfile({
+          user_id: update.user_id,
+          ...updateData
+        });
 
-        if (updateError) {
-          console.error('Error updating memory profile:', updateError);
+        if (!result || !result.success) {
+          console.error('Error updating memory profile');
           return false;
         }
 
@@ -269,17 +265,7 @@ export class MemoryUpdateService {
   // Get user's current memory profile
   static async getMemoryProfile(user_id: string): Promise<any> {
     try {
-      const { data, error } = await supabase
-        .from('memory_profiles')
-        .select('*')
-        .eq('user_id', user_id)
-        .single();
-
-      if (error) {
-        console.error('Error fetching memory profile:', error);
-        return null;
-      }
-
+      const data = await trpcClient.getMemoryProfile(user_id);
       return data;
     } catch (error) {
       console.error('Error in getMemoryProfile:', error);

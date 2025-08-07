@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { trpcClient } from './trpcClient';
 
 export interface SessionContinuityData {
   id: string;
@@ -25,23 +25,14 @@ export interface SessionResumeContext {
   sessionProgress: string;
 }
 
-export class SessionContinuityService {
+export class ConversationContinuityService {
   // Get session continuity for a user and session group
   static async getSessionContinuity(
     userId: string, 
     sessionGroupId: string
   ): Promise<SessionContinuityData | null> {
     try {
-      const { data, error } = await supabase.rpc('get_session_continuity', {
-        p_user_id: userId,
-        p_session_group_id: sessionGroupId
-      });
-
-      if (error) {
-        console.error('Error getting session continuity:', error);
-        return null;
-      }
-
+      const data = await trpcClient.getSessionContinuity(userId, sessionGroupId);
       return data && data.length > 0 ? data[0] : null;
     } catch (error) {
       console.error('Error getting session continuity:', error);
@@ -70,21 +61,16 @@ export class SessionContinuityService {
         isResuming
       });
       
-      const { data, error } = await supabase.rpc('upsert_session_continuity', {
-        p_user_id: userId,
-        p_session_group_id: sessionGroupId,
-        p_last_message_count: messageCount,
-        p_last_session_phase: sessionPhase,
-        p_last_therapeutic_focus: therapeuticFocus,
-        p_last_emotional_state: emotionalState,
-        p_is_resuming: isResuming
-      });
-
-      if (error) {
-        console.error('Error upserting session continuity:', error);
-        return null;
-      }
-
+      const data = await trpcClient.upsertSessionContinuity(
+        userId,
+        sessionGroupId,
+        messageCount,
+        sessionPhase,
+        therapeuticFocus,
+        emotionalState,
+        isResuming
+      );
+      
       console.log('🔍 SessionContinuityService.upsertSessionContinuity success:', data);
       return data;
     } catch (error) {
@@ -96,16 +82,7 @@ export class SessionContinuityService {
   // End a session (delete continuity record)
   static async endSession(userId: string, sessionGroupId: string): Promise<boolean> {
     try {
-      const { data, error } = await supabase.rpc('end_session_continuity', {
-        p_user_id: userId,
-        p_session_group_id: sessionGroupId
-      });
-
-      if (error) {
-        console.error('Error ending session continuity:', error);
-        return false;
-      }
-
+      const data = await trpcClient.endSessionContinuity(userId, sessionGroupId);
       return data;
     } catch (error) {
       console.error('Error ending session continuity:', error);
@@ -116,15 +93,7 @@ export class SessionContinuityService {
   // Get all active sessions for a user
   static async getUserActiveSessions(userId: string): Promise<any[]> {
     try {
-      const { data, error } = await supabase.rpc('get_user_active_sessions', {
-        p_user_id: userId
-      });
-
-      if (error) {
-        console.error('Error getting user active sessions:', error);
-        return [];
-      }
-
+      const data = await trpcClient.getUserActiveSessions(userId);
       return data || [];
     } catch (error) {
       console.error('Error getting user active sessions:', error);
@@ -135,13 +104,7 @@ export class SessionContinuityService {
   // Clean up stale sessions (older than 24 hours)
   static async cleanupStaleSessions(): Promise<number> {
     try {
-      const { data, error } = await supabase.rpc('cleanup_stale_session_continuity');
-
-      if (error) {
-        console.error('Error cleaning up stale sessions:', error);
-        return 0;
-      }
-
+      const data = await trpcClient.cleanupStaleSessionContinuity();
       return data || 0;
     } catch (error) {
       console.error('Error cleaning up stale sessions:', error);

@@ -1,6 +1,63 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
+CREATE TABLE public.conversation_continuity (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  conversation_id uuid NOT NULL,
+  last_message_count integer NOT NULL DEFAULT 0,
+  last_session_phase character varying NOT NULL DEFAULT 'start'::character varying,
+  last_therapeutic_focus text,
+  last_emotional_state character varying,
+  last_timestamp timestamp with time zone NOT NULL DEFAULT now(),
+  session_duration_minutes integer DEFAULT 0,
+  is_resuming boolean DEFAULT false,
+  continuity_context text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT conversation_continuity_pkey PRIMARY KEY (id),
+  CONSTRAINT conversation_continuity_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id),
+  CONSTRAINT session_continuity_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.conversation_messages (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid,
+  conversation_id uuid,
+  created_at timestamp without time zone DEFAULT now(),
+  input_type text,
+  input_transcript text,
+  gpt_response text,
+  audio_response_url text,
+  summary text,
+  mood_at_time integer,
+  flagged boolean DEFAULT false,
+  tags ARRAY,
+  CONSTRAINT conversation_messages_pkey PRIMARY KEY (id),
+  CONSTRAINT sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+  CONSTRAINT conversation_messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id)
+);
+CREATE TABLE public.conversation_themes (
+  conversation_id uuid NOT NULL,
+  theme_id uuid NOT NULL,
+  CONSTRAINT conversation_themes_pkey PRIMARY KEY (conversation_id, theme_id),
+  CONSTRAINT session_themes_theme_id_fkey FOREIGN KEY (theme_id) REFERENCES public.themes(id),
+  CONSTRAINT conversation_themes_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id)
+);
+CREATE TABLE public.conversations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid,
+  started_at timestamp without time zone DEFAULT now(),
+  ended_at timestamp without time zone,
+  title text,
+  context_summary text,
+  mood_at_start integer,
+  mood_at_end integer,
+  context_json json,
+  created_at timestamp without time zone,
+  description text,
+  CONSTRAINT conversations_pkey PRIMARY KEY (id),
+  CONSTRAINT session_groups_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
 CREATE TABLE public.crisis_flags (
   id uuid NOT NULL,
   user_id uuid,
@@ -9,8 +66,8 @@ CREATE TABLE public.crisis_flags (
   triggered_at timestamp without time zone DEFAULT now(),
   reviewed boolean DEFAULT false,
   CONSTRAINT crisis_flags_pkey PRIMARY KEY (id),
-  CONSTRAINT crisis_flags_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
-  CONSTRAINT crisis_flags_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.sessions(id)
+  CONSTRAINT crisis_flags_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversation_messages(id),
+  CONSTRAINT crisis_flags_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
 CREATE TABLE public.daily_practice_logs (
   id uuid NOT NULL,
@@ -21,8 +78,8 @@ CREATE TABLE public.daily_practice_logs (
   mood_after integer,
   reflection text,
   CONSTRAINT daily_practice_logs_pkey PRIMARY KEY (id),
-  CONSTRAINT daily_practice_logs_practice_id_fkey FOREIGN KEY (practice_id) REFERENCES public.daily_practices(id),
-  CONSTRAINT daily_practice_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+  CONSTRAINT daily_practice_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+  CONSTRAINT daily_practice_logs_practice_id_fkey FOREIGN KEY (practice_id) REFERENCES public.daily_practices(id)
 );
 CREATE TABLE public.daily_practices (
   id uuid NOT NULL,
@@ -36,7 +93,7 @@ CREATE TABLE public.daily_practices (
   is_suggested boolean DEFAULT false,
   is_pinned boolean DEFAULT false,
   CONSTRAINT daily_practices_pkey PRIMARY KEY (id),
-  CONSTRAINT daily_practices_related_session_id_fkey FOREIGN KEY (related_session_id) REFERENCES public.sessions(id),
+  CONSTRAINT daily_practices_related_session_id_fkey FOREIGN KEY (related_session_id) REFERENCES public.conversation_messages(id),
   CONSTRAINT daily_practices_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
 CREATE TABLE public.data_exports (
@@ -55,6 +112,7 @@ CREATE TABLE public.emotional_trends (
   mood_score integer CHECK (mood_score >= 1 AND mood_score <= 10),
   mood_label text,
   notes text,
+  created_at timestamp without time zone DEFAULT now(),
   CONSTRAINT emotional_trends_pkey PRIMARY KEY (id),
   CONSTRAINT emotional_trends_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
@@ -123,6 +181,7 @@ CREATE TABLE public.inner_parts (
   tone text,
   description text,
   updated_at timestamp without time zone DEFAULT now(),
+  created_at timestamp without time zone DEFAULT now(),
   CONSTRAINT inner_parts_pkey PRIMARY KEY (id),
   CONSTRAINT inner_parts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
@@ -152,59 +211,59 @@ CREATE TABLE public.mantras (
 CREATE TABLE public.memory_profiles (
   id uuid NOT NULL,
   user_id uuid,
-  themes ARRAY,
-  people jsonb,
-  coping_tools ARRAY,
-  goals ARRAY,
-  summary text,
-  preferred_therapy_styles ARRAY,
-  preferred_tone ARRAY,
-  trauma_patterns text,
-  pattern_loops ARRAY,
-  shadow_themes ARRAY,
-  ancestral_issues text,
-  current_practices ARRAY,
-  regulation_strategies ARRAY,
-  dysregulating_factors ARRAY,
   spiritual_connection_level integer CHECK (spiritual_connection_level >= 1 AND spiritual_connection_level <= 10),
-  spiritual_path_notes text,
-  role_model_traits ARRAY,
   personal_agency_level integer CHECK (personal_agency_level >= 1 AND personal_agency_level <= 10),
   boundaries_awareness integer CHECK (boundaries_awareness >= 1 AND boundaries_awareness <= 10),
   self_development_capacity integer CHECK (self_development_capacity >= 1 AND self_development_capacity <= 10),
   hard_truths_tolerance integer CHECK (hard_truths_tolerance >= 1 AND hard_truths_tolerance <= 10),
   awareness_level integer CHECK (awareness_level >= 1 AND awareness_level <= 10),
-  insight_notes text,
-  stuck_points ARRAY,
-  growth_milestones ARRAY,
   suicidal_risk_level integer CHECK (suicidal_risk_level >= 0 AND suicidal_risk_level <= 3),
   updated_at timestamp without time zone DEFAULT now(),
   created_at timestamp without time zone DEFAULT now(),
-  emotional_patterns ARRAY,
-  relationship_dynamics ARRAY,
-  growth_opportunities ARRAY,
-  therapeutic_approach text,
-  risk_factors ARRAY,
-  strengths ARRAY,
-  motivation_for_joining text,
-  hopes_to_achieve text,
-  previous_therapy text,
-  therapy_type text,
-  therapy_duration text,
-  sleep_routine text,
-  mood_trends ARRAY,
   sleep_quality text,
   mood_score_initial integer,
-  emotional_states_initial ARRAY,
-  suicidal_thoughts_initial text,
-  relationship_status text,
-  living_situation text,
-  support_system ARRAY,
-  current_stressors ARRAY,
-  daily_habits ARRAY,
-  substance_use ARRAY,
-  biggest_challenge text,
-  biggest_obstacle text,
+  themes jsonb,
+  people jsonb,
+  coping_tools jsonb,
+  goals jsonb,
+  preferred_therapy_styles jsonb,
+  preferred_tone jsonb,
+  pattern_loops jsonb,
+  shadow_themes jsonb,
+  current_practices jsonb,
+  regulation_strategies jsonb,
+  dysregulating_factors jsonb,
+  role_model_traits jsonb,
+  growth_milestones jsonb,
+  emotional_patterns jsonb,
+  relationship_dynamics jsonb,
+  growth_opportunities jsonb,
+  risk_factors jsonb,
+  strengths jsonb,
+  mood_trends jsonb,
+  emotional_states_initial jsonb,
+  support_system jsonb,
+  current_stressors jsonb,
+  daily_habits jsonb,
+  substance_use jsonb,
+  stuck_points jsonb,
+  summary jsonb,
+  trauma_patterns jsonb,
+  ancestral_issues jsonb,
+  spiritual_path_notes jsonb,
+  insight_notes jsonb,
+  therapeutic_approach jsonb,
+  motivation_for_joining jsonb,
+  hopes_to_achieve jsonb,
+  previous_therapy jsonb,
+  therapy_type jsonb,
+  therapy_duration jsonb,
+  sleep_routine jsonb,
+  suicidal_thoughts_initial jsonb,
+  relationship_status jsonb,
+  living_situation jsonb,
+  biggest_challenge jsonb,
+  biggest_obstacle jsonb,
   CONSTRAINT memory_profiles_pkey PRIMARY KEY (id),
   CONSTRAINT memory_profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
@@ -236,8 +295,8 @@ CREATE TABLE public.prompt_logs (
   response_text text,
   created_at timestamp without time zone DEFAULT now(),
   CONSTRAINT prompt_logs_pkey PRIMARY KEY (id),
-  CONSTRAINT prompt_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
-  CONSTRAINT prompt_logs_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.sessions(id)
+  CONSTRAINT prompt_logs_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversation_messages(id),
+  CONSTRAINT prompt_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
 CREATE TABLE public.relationships (
   id uuid NOT NULL,
@@ -248,63 +307,6 @@ CREATE TABLE public.relationships (
   is_active boolean DEFAULT true,
   CONSTRAINT relationships_pkey PRIMARY KEY (id),
   CONSTRAINT relationships_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
-);
-CREATE TABLE public.session_continuity (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  session_group_id uuid NOT NULL,
-  last_message_count integer NOT NULL DEFAULT 0,
-  last_session_phase character varying NOT NULL DEFAULT 'start'::character varying,
-  last_therapeutic_focus text,
-  last_emotional_state character varying,
-  last_timestamp timestamp with time zone NOT NULL DEFAULT now(),
-  session_duration_minutes integer DEFAULT 0,
-  is_resuming boolean DEFAULT false,
-  continuity_context text,
-  created_at timestamp with time zone DEFAULT now(),
-  updated_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT session_continuity_pkey PRIMARY KEY (id),
-  CONSTRAINT session_continuity_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
-  CONSTRAINT session_continuity_session_group_id_fkey FOREIGN KEY (session_group_id) REFERENCES public.session_groups(id)
-);
-CREATE TABLE public.session_groups (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid,
-  started_at timestamp without time zone DEFAULT now(),
-  ended_at timestamp without time zone,
-  title text,
-  context_summary text,
-  mood_at_start integer,
-  mood_at_end integer,
-  context_json json,
-  created_at timestamp without time zone,
-  description text,
-  CONSTRAINT session_groups_pkey PRIMARY KEY (id),
-  CONSTRAINT session_groups_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
-);
-CREATE TABLE public.session_themes (
-  session_id uuid NOT NULL,
-  theme_id uuid NOT NULL,
-  CONSTRAINT session_themes_pkey PRIMARY KEY (session_id, theme_id),
-  CONSTRAINT session_themes_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.sessions(id),
-  CONSTRAINT session_themes_theme_id_fkey FOREIGN KEY (theme_id) REFERENCES public.themes(id)
-);
-CREATE TABLE public.sessions (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid,
-  session_group_id uuid,
-  created_at timestamp without time zone DEFAULT now(),
-  input_type text,
-  input_transcript text,
-  gpt_response text,
-  audio_response_url text,
-  summary text,
-  mood_at_time integer,
-  flagged boolean DEFAULT false,
-  tags ARRAY,
-  CONSTRAINT sessions_pkey PRIMARY KEY (id),
-  CONSTRAINT sessions_session_group_id_fkey FOREIGN KEY (session_group_id) REFERENCES public.session_groups(id),
-  CONSTRAINT sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
 CREATE TABLE public.themes (
   id uuid NOT NULL,

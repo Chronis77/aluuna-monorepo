@@ -2,31 +2,31 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React from 'react';
 import { FlatList, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SessionGroup } from '../types/database';
+import { Conversation } from '../types/database';
 
 interface SidebarProps {
-  sessionGroups: SessionGroup[];
-  currentSessionGroup: SessionGroup | null;
-  onSessionGroupSelect: (sessionGroup: SessionGroup) => void;
+  conversations: Conversation[];
+  currentConversation: Conversation | null;
+  onConversationSelect: (conversation: Conversation) => void;
   onNewSession: () => void;
   isCreatingSession?: boolean;
 }
 
 export function Sidebar({ 
-  sessionGroups, 
-  currentSessionGroup, 
-  onSessionGroupSelect, 
+  conversations, 
+  currentConversation, 
+  onConversationSelect, 
   onNewSession,
   isCreatingSession = false
 }: SidebarProps) {
-  const renderSessionGroupItem = ({ item }: { item: SessionGroup }) => (
+  const renderConversationItem = ({ item }: { item: Conversation }) => (
     <TouchableOpacity
       className={`p-4 border-b border-gray-200 ${
-        currentSessionGroup?.id === item.id ? 'bg-blue-50' : 'bg-white'
+        currentConversation?.id === item.id ? 'bg-blue-50' : 'bg-white'
       }`}
-      onPress={() => onSessionGroupSelect(item)}
+      onPress={() => onConversationSelect(item)}
     >
-      <Text className="font-semibold text-gray-800 mb-1">{item.title || 'Untitled Session'}</Text>
+      <Text className="font-semibold text-gray-800 mb-1">{item.title || 'Untitled Conversation'}</Text>
       <Text className="text-sm text-gray-600 mb-1">{item.context_summary || 'No summary available'}</Text>
       <Text className="text-xs text-gray-400">
         {new Date(item.started_at).toLocaleDateString()}
@@ -38,7 +38,7 @@ export function Sidebar({
     <SafeAreaView className="flex-1">
       <View className="p-4 border-b border-gray-200">
         <Text className="text-xl font-semibold text-gray-800 mb-2">
-          Sessions
+          Conversations
         </Text>
         <Text className="text-sm text-gray-600">
           Your therapeutic conversations
@@ -46,8 +46,8 @@ export function Sidebar({
       </View>
 
       <FlatList
-        data={sessionGroups}
-        renderItem={renderSessionGroupItem}
+        data={conversations}
+        renderItem={renderConversationItem}
         keyExtractor={(item) => item.id}
         className="flex-1"
       />

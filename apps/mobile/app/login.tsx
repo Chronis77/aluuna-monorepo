@@ -6,10 +6,12 @@ import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { StyledButton } from '../components/ui/StyledButton';
 import { StyledInput } from '../components/ui/StyledInput';
 import { Toast } from '../components/ui/Toast';
-import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import { trpcClient } from '../lib/trpcClient';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -18,7 +20,7 @@ export default function LoginScreen() {
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({
     visible: false,
     message: '',
-    type: 'info'
+    type: 'info',
   });
 
   const validate = () => {
@@ -47,25 +49,31 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       console.log('🔐 Attempting login with email:', email);
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        console.log('⚠️ Login failed:', error.message);
+      const result = await login(email, password);
+      
+      if (result.success) {
+        console.log('✅ Login successful, redirecting to session');
         setToast({
           visible: true,
-          message: error.message,
-          type: 'error'
+          message: 'Login successful!',
+          type: 'success',
         });
-      } else {
-        console.log('✅ Login successful, redirecting to session');
         // Redirect to session page on successful login
-        router.replace('/session' as any);
+        router.replace('/conversation' as any);
+      } else {
+        console.log('⚠️ Login failed:', result.error);
+        setToast({
+          visible: true,
+          message: result.error || 'Login failed',
+          type: 'error',
+        });
       }
     } catch (error) {
       console.error('❌ Unexpected login error:', error);
       setToast({
         visible: true,
         message: 'An unexpected error occurred',
-        type: 'error'
+        type: 'error',
       });
     } finally {
       setIsLoading(false);

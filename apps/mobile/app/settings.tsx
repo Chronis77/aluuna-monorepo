@@ -16,7 +16,7 @@ import { AluunaLoader } from '../components/AluunaLoader';
 import { Toast } from '../components/ui/Toast';
 import { VoiceSettings } from '../components/VoiceSettings';
 import { speechManager } from '../lib/speechManager';
-import { supabase } from '../lib/supabase';
+import { trpcClient } from '../lib/trpcClient';
 import { voicePreferencesService } from '../lib/voicePreferencesService';
 
 interface SettingsItem {
@@ -59,7 +59,7 @@ export default function SettingsScreen() {
       setIsLoading(true);
       
       // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await trpcClient.getCurrentUser();
       if (!user) {
         router.replace('/login' as any);
         return;
@@ -164,30 +164,14 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               // Clear onboarding data from database before signing out
-              const { data: { user }, error: userError } = await supabase.auth.getUser();
-              if (!userError && user) {
-                const { error: clearError } = await supabase
-                  .from('onboarding_progress')
-                  .delete()
-                  .eq('user_id', user.id);
-                
-                if (clearError) {
-                  console.error('Error clearing onboarding data:', clearError);
-                } else {
-                  console.log('✅ Onboarding data cleared on logout');
-                }
+              const user = await trpcClient.getCurrentUser();
+              if (user) {
+                await trpcClient.deleteOnboardingProgress(user.id);
+                console.log('✅ Onboarding data cleared on logout');
               }
               
-              const { error } = await supabase.auth.signOut();
-              if (error) {
-                setToast({
-                  visible: true,
-                  message: error.message,
-                  type: 'error',
-                });
-              } else {
-                router.replace('/login' as any);
-              }
+              await trpcClient.signOut();
+              router.replace('/login' as any);
             } catch (error) {
               console.error('Error logging out:', error);
               setToast({
@@ -215,10 +199,7 @@ export default function SettingsScreen() {
             try {
               // Clear all user data from database
               if (currentUserId) {
-                await supabase.from('session_groups').delete().eq('user_id', currentUserId);
-                await supabase.from('sessions').delete().eq('user_id', currentUserId);
-                await supabase.from('memory_items').delete().eq('user_id', currentUserId);
-                await supabase.from('mantras').delete().eq('user_id', currentUserId);
+                await trpcClient.deleteUserData(currentUserId);
               }
               
               setToast({
@@ -227,8 +208,8 @@ export default function SettingsScreen() {
                 type: 'success',
               });
               
-              // Navigate back to session screen
-              router.replace('/session' as any);
+                    // Navigate back to conversation screen
+      router.replace('/conversation' as any);
             } catch (error) {
               console.error('Error clearing data:', error);
               setToast({

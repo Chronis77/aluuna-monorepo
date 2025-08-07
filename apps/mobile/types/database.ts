@@ -1,4 +1,4 @@
-export interface SessionGroup {
+export interface Conversation {
   id: string;
   user_id: string;
   started_at: string;
@@ -10,10 +10,10 @@ export interface SessionGroup {
   context_json: any;
 }
 
-export interface Session {
+export interface ConversationMessage {
   id: string;
   user_id: string;
-  session_group_id: string;
+  conversation_id: string;
   created_at: string;
   input_type: string | null;
   input_transcript: string | null;
@@ -52,15 +52,15 @@ export interface Feedback {
 export interface Database {
   public: {
     Tables: {
-      session_groups: {
-        Row: SessionGroup;
-        Insert: Omit<SessionGroup, 'id'>;
-        Update: Partial<Omit<SessionGroup, 'id'>>;
+      conversations: {
+        Row: Conversation;
+        Insert: Omit<Conversation, 'id'>;
+        Update: Partial<Omit<Conversation, 'id'>>;
       };
-      sessions: {
-        Row: Session;
-        Insert: Omit<Session, 'id' | 'created_at'>;
-        Update: Partial<Omit<Session, 'id' | 'created_at'>>;
+      conversation_messages: {
+        Row: ConversationMessage;
+        Insert: Omit<ConversationMessage, 'id' | 'created_at'>;
+        Update: Partial<Omit<ConversationMessage, 'id' | 'created_at'>>;
       };
       users: {
         Row: User;

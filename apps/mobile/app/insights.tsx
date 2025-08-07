@@ -18,7 +18,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AluunaLoader } from '../components/AluunaLoader';
 import { Toast } from '../components/ui/Toast';
 import { MemoryProcessingService } from '../lib/memoryProcessingService';
-import { supabase } from '../lib/supabase';
+import { trpcClient } from '../lib/trpcClient';
+import { useAuth } from '../context/AuthContext';
 
 interface Insight {
   id: string;
@@ -30,6 +31,7 @@ interface Insight {
 
 export default function InsightsScreen() {
   const router = useRouter();
+  const { session } = useAuth();
   const [insights, setInsights] = useState<Insight[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -60,8 +62,15 @@ export default function InsightsScreen() {
       setIsLoading(true);
       
       // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
+      if (!session?.token) {
+        console.log('⚠️ No session token found, redirecting to login');
+        router.replace('/login' as any);
+        return;
+      }
+      
+      const user = await trpcClient.getCurrentUser(session.token);
       if (!user) {
+        console.log('⚠️ No user found, redirecting to login');
         router.replace('/login' as any);
         return;
       }
@@ -87,10 +96,13 @@ export default function InsightsScreen() {
     try {
       console.log('🔄 Loading insights for user:', userId);
       const insightsData = await MemoryProcessingService.getUserInsights(userId, 100);
-      setInsights(insightsData);
-      console.log('🔄 Loaded insights:', insightsData.length);
+      // Ensure we always set an array, even if the response is undefined
+      setInsights(insightsData || []);
+      console.log('🔄 Loaded insights:', (insightsData || []).length);
     } catch (error) {
       console.error('❌ Error loading insights:', error);
+      // Set empty array on error to prevent filter issues
+      setInsights([]);
       setToast({
         visible: true,
         message: 'Failed to load insights. Please try again.',
@@ -117,18 +129,10 @@ export default function InsightsScreen() {
       
       const importance = parseInt(editImportance) || 5;
       
-      const { error, count } = await supabase
-        .from('insights')
-        .update({ 
-          insight_text: editText.trim(),
-          importance: importance,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', editingInsight.id);
+      const result = await trpcClient.updateInsight(editingInsight.id, editText.trim(), importance);
 
-      console.log('✏️ Insight update result:', { error, count });
-      if (error) throw error;
-      if (count === 0) throw new Error('No insight found to update');
+      console.log('✏️ Insight update result:', result);
+      if (!result.success) throw new Error('Failed to update insight');
       console.log('✅ Insight updated successfully');
 
       console.log('✅ Edit operation completed, reloading data...');
@@ -178,14 +182,10 @@ export default function InsightsScreen() {
     try {
       console.log('🗑️ Attempting to delete insight:', insight.id);
       
-      const { error, count } = await supabase
-        .from('insights')
-        .delete()
-        .eq('id', insight.id);
+      const result = await trpcClient.deleteInsight(insight.id);
 
-      console.log('🗑️ Insight delete result:', { error, count });
-      if (error) throw error;
-      if (count === 0) throw new Error('No insight found to delete');
+      console.log('🗑️ Insight delete result:', result);
+      if (!result.success) throw new Error('Failed to delete insight');
       console.log('✅ Insight deleted successfully');
 
       console.log('✅ Delete operation completed, reloading data...');

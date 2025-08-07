@@ -1,0 +1,469 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model users {
+  id                String   @id @default(uuid())
+  name              String?
+  email             String   @unique
+  password          String?  // Added for local authentication
+  created_at        DateTime @default(now())
+  onboarding_skipped Boolean @default(false)
+  updated_at        DateTime @default(now())
+  
+  // Relations
+  memory_profiles   memory_profiles?
+  conversation_messages conversation_messages[]
+  conversations    conversations[]
+  inner_parts       inner_parts[]
+  stuck_points      stuck_points[]
+  coping_tools      coping_tools[]
+  shadow_themes     shadow_themes[]
+  pattern_loops     pattern_loops[]
+  mantras           mantras[]
+  relationships     relationships[]
+  insights          insights[]
+  emotional_trends  emotional_trends[]
+  crisis_flags      crisis_flags[]
+  value_conflicts   value_conflicts[]
+  memory_snapshots  memory_snapshots[]
+  daily_practices   daily_practices[]
+  daily_practice_logs daily_practice_logs[]
+  data_exports      data_exports[]
+  feedback          feedback[]
+  feedback_log      feedback_log[]
+  free_journal_entries free_journal_entries[]
+  growth_milestones_log growth_milestones_log[]
+  habit_streaks     habit_streaks[]
+  prompt_logs       prompt_logs[]
+  conversation_continuity conversation_continuity[]
+  user_preferences  user_preferences?
+  value_compass     value_compass?
+  onboarding_progress onboarding_progress?
+}
+
+model memory_profiles {
+  id                      String   @id @default(cuid())
+  user_id                 String   @unique
+  user                    users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at              DateTime @default(now())
+  updated_at              DateTime @default(now())
+  
+  // Core profile data - now using JSONB for better flexibility
+  themes                  Json?
+  people                  Json?
+  coping_tools            Json?
+  goals                   Json?
+  summary                 Json?
+  preferred_therapy_styles Json?
+  preferred_tone          Json?
+  trauma_patterns         Json?
+  pattern_loops           Json?
+  shadow_themes           Json?
+  ancestral_issues        Json?
+  current_practices       Json?
+  regulation_strategies   Json?
+  dysregulating_factors   Json?
+  spiritual_connection_level Int?
+  spiritual_path_notes    Json?
+  role_model_traits       Json?
+  personal_agency_level   Int?
+  boundaries_awareness    Int?
+  self_development_capacity Int?
+  hard_truths_tolerance   Int?
+  awareness_level         Int?
+  insight_notes           Json?
+  stuck_points            Json?
+  growth_milestones       Json?
+  suicidal_risk_level     Int?
+  emotional_patterns      Json?
+  relationship_dynamics   Json?
+  growth_opportunities    Json?
+  therapeutic_approach    Json?
+  risk_factors            Json?
+  strengths               Json?
+  motivation_for_joining  Json?
+  hopes_to_achieve        Json?
+  previous_therapy        Json?
+  therapy_type            Json?
+  therapy_duration        Json?
+  sleep_routine           Json?
+  mood_trends             Json?
+  sleep_quality           String?
+  mood_score_initial      Int?
+  emotional_states_initial Json?
+  suicidal_thoughts_initial Json?
+  relationship_status     Json?
+  living_situation        Json?
+  support_system          Json?
+  current_stressors       Json?
+  daily_habits            Json?
+  substance_use           Json?
+  biggest_challenge       Json?
+  biggest_obstacle        Json?
+}
+
+model conversation_messages {
+  id                String   @id @default(uuid())
+  user_id           String
+  user              users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  conversation_id   String?
+  conversation      conversations? @relation(fields: [conversation_id], references: [id])
+  created_at        DateTime @default(now())
+  input_type        String?
+  input_transcript  String?
+  gpt_response      String?
+  audio_response_url String?
+  summary           String?
+  mood_at_time      Int?
+  flagged           Boolean @default(false)
+  tags              String[]
+  
+  // Relations
+  stuck_points      stuck_points[]
+  coping_tools      coping_tools[]
+  shadow_themes     shadow_themes[]
+  pattern_loops     pattern_loops[]
+  daily_practices   daily_practices[]
+  prompt_logs       prompt_logs[]
+  conversation_themes conversation_themes[]
+  feedback_log      feedback_log[]
+  growth_milestones_log growth_milestones_log[]
+}
+
+model conversations {
+  id          String    @id @default(uuid())
+  user_id     String
+  user        users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime?
+  started_at  DateTime  @default(now())
+  ended_at    DateTime?
+  title       String?
+  context_summary String?
+  mood_at_start Int?
+  mood_at_end Int?
+  context_json Json?
+  description String?
+  conversation_messages conversation_messages[]
+  conversation_continuity conversation_continuity[]
+  daily_practices daily_practices[]
+  growth_milestones_log growth_milestones_log[]
+}
+
+model inner_parts {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  updated_at  DateTime @default(now())
+  name        String?
+  role        String?
+  tone        String?
+  description String?
+}
+
+model stuck_points {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  description String
+  conversation_message_id String?
+  conversation_message conversation_messages? @relation(fields: [conversation_message_id], references: [id])
+}
+
+model coping_tools {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  name        String
+  description String
+  category    String?
+  effectiveness Int?
+  conversation_message_id String?
+  conversation_message conversation_messages? @relation(fields: [conversation_message_id], references: [id])
+}
+
+model shadow_themes {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  theme       String
+  description String?
+  conversation_message_id String?
+  conversation_message conversation_messages? @relation(fields: [conversation_message_id], references: [id])
+}
+
+model pattern_loops {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  pattern     String
+  description String?
+  trigger     String?
+  response    String?
+  conversation_message_id String?
+  conversation_message conversation_messages? @relation(fields: [conversation_message_id], references: [id])
+}
+
+model mantras {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  text        String
+  source      String?
+  is_favorite Boolean @default(false)
+  tags        String[]
+  is_pinned   Boolean @default(false)
+}
+
+model relationships {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  name        String
+  role        String
+  notes       String?
+  is_active   Boolean @default(true)
+}
+
+model insights {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  insight_text String
+  related_theme String?
+  importance  Int @default(5)
+}
+
+model emotional_trends {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  recorded_at DateTime @default(now())
+  mood_score  Int
+  mood_label  String?
+  notes       String?
+}
+
+model crisis_flags {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  flag_type   String?
+  triggered_at DateTime @default(now())
+  reviewed    Boolean @default(false)
+}
+
+model value_conflicts {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  conflict    String
+  description String?
+}
+
+model memory_snapshots {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  summary     String
+  key_themes  String[]
+  generated_by String @default("gpt")
+}
+
+model daily_practices {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  date        DateTime @default(now())
+  source      String?
+  prompt_text String?
+  completed_at DateTime?
+  related_session_id String?
+  is_suggested Boolean @default(false)
+  is_pinned   Boolean @default(false)
+  conversation conversations? @relation(fields: [related_session_id], references: [id])
+  daily_practice_logs daily_practice_logs[]
+  conversation_messages conversation_messages[]
+}
+
+model daily_practice_logs {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  practice_id String
+  practice    daily_practices @relation(fields: [practice_id], references: [id])
+  date        DateTime?
+  mood_before Int?
+  mood_after  Int?
+  reflection  String?
+}
+
+model data_exports {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  requested_at DateTime?
+  export_url  String?
+  status      String @default("pending")
+}
+
+model feedback {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  raw_feedback String
+  ai_summary  String?
+  priority    String?
+  feedback_type String @default("general")
+  device_info Json?
+  app_version String?
+  processed_at DateTime?
+  status      String @default("pending")
+  tags        String[]
+  metadata    Json?
+}
+
+model feedback_log {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  rating      Int?
+  comment     String?
+  session_id  String?
+  conversation_message conversation_messages? @relation(fields: [session_id], references: [id])
+}
+
+model free_journal_entries {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  entry_text  String
+  tags        String[]
+  mood_score  Int?
+}
+
+model growth_milestones_log {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  milestone   String
+  related_session_id String?
+  date_achieved DateTime?
+  method      String?
+  conversation conversations? @relation(fields: [related_session_id], references: [id])
+  conversation_messages conversation_messages[]
+}
+
+model habit_streaks {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  habit_type  String?
+  current_streak Int?
+  longest_streak Int?
+  last_entry  DateTime?
+}
+
+model prompt_logs {
+  id          String   @id @default(cuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  prompt_text String?
+  gpt_model   String?
+  response_text String?
+  session_id  String?
+  conversation_message conversation_messages? @relation(fields: [session_id], references: [id])
+}
+
+model conversation_continuity {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  conversation_id String
+  conversation conversations @relation(fields: [conversation_id], references: [id])
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  last_message_count Int @default(0)
+  last_session_phase String @default("start")
+  last_therapeutic_focus String?
+  last_emotional_state String?
+  last_timestamp DateTime @default(now())
+  session_duration_minutes Int @default(0)
+  is_resuming  Boolean @default(false)
+  continuity_context String?
+}
+
+model conversation_themes {
+  conversation_id String
+  theme_id    String
+  conversation conversation_messages @relation(fields: [conversation_id], references: [id])
+  theme       themes @relation(fields: [theme_id], references: [id])
+  
+  @@id([conversation_id, theme_id])
+}
+
+model themes {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  conversation_themes conversation_themes[]
+}
+
+model user_preferences {
+  user_id     String   @id @unique
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  show_text_response Boolean @default(true)
+  play_audio_response Boolean @default(true)
+  preferred_therapist_name String?
+  daily_reminder_time DateTime?
+  timezone    String?
+}
+
+model value_compass {
+  id          String   @id @default(cuid())
+  user_id     String   @unique
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  core_values String[]
+  anti_values String[]
+  narrative   String?
+  last_reflected_at DateTime?
+}
+
+model onboarding_progress {
+  id          String   @id @default(uuid())
+  user_id     String   @unique
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  onboarding_data Json @default("{}")
+} 

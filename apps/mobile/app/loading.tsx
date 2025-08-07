@@ -13,7 +13,7 @@ export default function LoadingScreen() {
     const timer = setTimeout(() => {
       if (session) {
         console.log('✅ User authenticated, redirecting to session');
-        router.replace('/session');
+        router.replace('/conversation');
       } else {
         console.log('⚠️ No authentication, redirecting to login');
         router.replace('/login');

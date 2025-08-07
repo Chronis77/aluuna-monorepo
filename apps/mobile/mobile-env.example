@@ -1,0 +1,34 @@
+# =============================================================================
+# Aluuna Mobile App Environment Configuration
+# =============================================================================
+
+# OpenAI Configuration (Required)
+EXPO_PUBLIC_OPENAI_API_KEY=your-openai-api-key-here
+
+# Aluuna Services Configuration (Required)
+EXPO_PUBLIC_ALUUNA_APP_API_KEY=your-aluuna-app-api-key-here
+
+# Server URLs (Optional - have defaults)
+# Development server URL (prioritized in development mode)
+EXPO_PUBLIC_DEV_SERVER_URL=http://localhost:3000
+# Production server URL (used when not in development or no dev URL set)
+EXPO_PUBLIC_SERVER_URL=https://aluuna-services-production.up.railway.app
+EXPO_PUBLIC_TTS_SERVER_URL=https://aluuna-services-production.up.railway.app
+EXPO_PUBLIC_WEBSOCKET_URL=https://aluuna-services-production.up.railway.app
+
+# Timeouts and UI Configuration (Optional - have defaults)
+EXPO_PUBLIC_TTS_TIMEOUT=10000
+EXPO_PUBLIC_LOADING_TIMEOUT=5000
+EXPO_PUBLIC_TOAST_DURATION=3000
+EXPO_PUBLIC_SESSION_TIMEOUT=3000
+EXPO_PUBLIC_WEBSOCKET_TIMEOUT=20000
+
+# =============================================================================
+# Architecture Notes:
+# =============================================================================
+# Mobile App → Services API → Supabase Database
+# 
+# The mobile app does NOT connect directly to Supabase.
+# All database operations go through the services API.
+# This provides better security, centralized logic, and easier maintenance.
+# ============================================================================= 

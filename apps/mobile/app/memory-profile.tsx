@@ -18,8 +18,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AluunaLoader } from '../components/AluunaLoader';
 import { Toast } from '../components/ui/Toast';
+import { useAuth } from '../context/AuthContext';
 import { MemoryProcessingService } from '../lib/memoryProcessingService';
-import { supabase } from '../lib/supabase';
+import { trpcClient } from '../lib/trpcClient';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -42,6 +43,7 @@ interface MemorySection {
 
 export default function MemoryProfileScreen() {
   const router = useRouter();
+  const { session } = useAuth();
   const [memorySections, setMemorySections] = useState<MemorySection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -63,15 +65,27 @@ export default function MemoryProfileScreen() {
 
   // Initialize the memory profile screen
   useEffect(() => {
-    initializeMemoryProfile();
-  }, []);
+    if (session) {
+      initializeMemoryProfile();
+    } else {
+      // If no session, redirect to login
+      router.replace('/login' as any);
+    }
+  }, [session]);
 
   const initializeMemoryProfile = async () => {
     try {
       setIsLoading(true);
       
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
+      // Check if we have a valid session with token
+      if (!session?.token) {
+        console.error('No authentication token available');
+        router.replace('/login' as any);
+        return;
+      }
+      
+      // Get current user with token from session
+      const user = await trpcClient.getCurrentUser(session.token);
       if (!user) {
         router.replace('/login' as any);
         return;
@@ -98,15 +112,13 @@ export default function MemoryProfileScreen() {
     try {
       console.log('🔄 Loading memory data for user:', userId);
       
-      // Load all memory data in parallel (excluding insights - they have their own screen)
-      const [memoryProfile, innerParts, memorySnapshots] = await Promise.all([
-        MemoryProcessingService.getMemoryProfile(userId),
+      // Load inner parts and memory snapshots first (these work)
+      const [innerParts, memorySnapshots] = await Promise.all([
         MemoryProcessingService.getUserInnerParts(userId),
         getMemorySnapshots(userId)
       ]);
 
-      console.log('🔄 Loaded data:', {
-        memoryProfile: memoryProfile ? 'exists' : 'null',
+      console.log('🔄 Loaded basic data:', {
         innerPartsCount: innerParts?.length || 0,
         memorySnapshotsCount: memorySnapshots?.length || 0
       });
@@ -115,7 +127,7 @@ export default function MemoryProfileScreen() {
 
       // Process inner parts
       if (innerParts && innerParts.length > 0) {
-        const innerPartItems: MemoryItem[] = innerParts.map(part => ({
+        const innerPartItems: MemoryItem[] = innerParts.map((part: any) => ({
           id: part.id,
           type: 'inner_part',
           title: part.name,
@@ -133,89 +145,9 @@ export default function MemoryProfileScreen() {
         });
       }
 
-      // Process stuck points from memory profile
-      if (memoryProfile?.stuck_points && memoryProfile.stuck_points.length > 0) {
-        const stuckPointItems: MemoryItem[] = memoryProfile.stuck_points.map((point: string, index: number) => ({
-          id: `stuck_point_${index}`,
-          type: 'stuck_point',
-          title: 'Stuck Point',
-          content: point,
-          metadata: { originalIndex: index },
-          createdAt: memoryProfile.updated_at,
-          updatedAt: memoryProfile.updated_at,
-        }));
-        
-        sections.push({
-          title: 'Stuck Points',
-          data: stuckPointItems,
-          icon: 'block',
-          color: '#EF4444'
-        });
-      }
-
-      // Process coping tools from memory profile
-      if (memoryProfile?.coping_tools && memoryProfile.coping_tools.length > 0) {
-        const copingToolItems: MemoryItem[] = memoryProfile.coping_tools.map((tool: string, index: number) => ({
-          id: `coping_tool_${index}`,
-          type: 'coping_tool',
-          title: 'Coping Tool',
-          content: tool,
-          metadata: { originalIndex: index },
-          createdAt: memoryProfile.updated_at,
-          updatedAt: memoryProfile.updated_at,
-        }));
-        
-        sections.push({
-          title: 'Coping Tools',
-          data: copingToolItems,
-          icon: 'healing',
-          color: '#10B981'
-        });
-      }
-
-      // Process shadow themes from memory profile
-      if (memoryProfile?.shadow_themes && memoryProfile.shadow_themes.length > 0) {
-        const shadowThemeItems: MemoryItem[] = memoryProfile.shadow_themes.map((theme: string, index: number) => ({
-          id: `shadow_theme_${index}`,
-          type: 'shadow_theme',
-          title: 'Shadow Theme',
-          content: theme,
-          metadata: { originalIndex: index },
-          createdAt: memoryProfile.updated_at,
-          updatedAt: memoryProfile.updated_at,
-        }));
-        
-        sections.push({
-          title: 'Shadow Themes',
-          data: shadowThemeItems,
-          icon: 'dark-mode',
-          color: '#6366F1'
-        });
-      }
-
-      // Process pattern loops from memory profile
-      if (memoryProfile?.pattern_loops && memoryProfile.pattern_loops.length > 0) {
-        const patternLoopItems: MemoryItem[] = memoryProfile.pattern_loops.map((loop: string, index: number) => ({
-          id: `pattern_loop_${index}`,
-          type: 'pattern_loop',
-          title: 'Pattern Loop',
-          content: loop,
-          metadata: { originalIndex: index },
-          createdAt: memoryProfile.updated_at,
-          updatedAt: memoryProfile.updated_at,
-        }));
-        
-        sections.push({
-          title: 'Pattern Loops',
-          data: patternLoopItems,
-          icon: 'loop',
-          color: '#EC4899'
-        });
-      }
-
       // Process memory snapshots
       if (memorySnapshots && memorySnapshots.length > 0) {
-        const snapshotItems: MemoryItem[] = memorySnapshots.map(snapshot => ({
+        const snapshotItems: MemoryItem[] = memorySnapshots.map((snapshot: any) => ({
           id: snapshot.id,
           type: 'memory_snapshot',
           title: 'Session Memory',
@@ -230,6 +162,94 @@ export default function MemoryProfileScreen() {
           icon: 'history',
           color: '#F59E0B'
         });
+      }
+
+      // Try to load memory profile components (with error handling)
+      try {
+        const memoryProfile = await getMemoryProfile(userId);
+        
+        if (memoryProfile) {
+          console.log('🔄 Memory profile loaded successfully');
+          
+          // Process stuck points
+          if (memoryProfile.stuck_points && memoryProfile.stuck_points.length > 0) {
+            const stuckPointItems: MemoryItem[] = memoryProfile.stuck_points.map((point: string, index: number) => ({
+              id: `stuck_point_${index}`,
+              type: 'stuck_point',
+              title: 'Stuck Point',
+              content: point,
+              metadata: { originalIndex: index },
+              createdAt: new Date().toISOString(),
+            }));
+            
+            sections.push({
+              title: 'Stuck Points',
+              data: stuckPointItems,
+              icon: 'block',
+              color: '#EF4444'
+            });
+          }
+
+          // Process coping tools
+          if (memoryProfile.coping_tools && memoryProfile.coping_tools.length > 0) {
+            const copingToolItems: MemoryItem[] = memoryProfile.coping_tools.map((tool: string, index: number) => ({
+              id: `coping_tool_${index}`,
+              type: 'coping_tool',
+              title: 'Coping Tool',
+              content: tool,
+              metadata: { originalIndex: index },
+              createdAt: new Date().toISOString(),
+            }));
+            
+            sections.push({
+              title: 'Coping Tools',
+              data: copingToolItems,
+              icon: 'healing',
+              color: '#10B981'
+            });
+          }
+
+          // Process shadow themes
+          if (memoryProfile.shadow_themes && memoryProfile.shadow_themes.length > 0) {
+            const shadowThemeItems: MemoryItem[] = memoryProfile.shadow_themes.map((theme: string, index: number) => ({
+              id: `shadow_theme_${index}`,
+              type: 'shadow_theme',
+              title: 'Shadow Theme',
+              content: theme,
+              metadata: { originalIndex: index },
+              createdAt: new Date().toISOString(),
+            }));
+            
+            sections.push({
+              title: 'Shadow Themes',
+              data: shadowThemeItems,
+              icon: 'dark-mode',
+              color: '#6366F1'
+            });
+          }
+
+          // Process pattern loops
+          if (memoryProfile.pattern_loops && memoryProfile.pattern_loops.length > 0) {
+            const patternLoopItems: MemoryItem[] = memoryProfile.pattern_loops.map((loop: string, index: number) => ({
+              id: `pattern_loop_${index}`,
+              type: 'pattern_loop',
+              title: 'Pattern Loop',
+              content: loop,
+              metadata: { originalIndex: index },
+              createdAt: new Date().toISOString(),
+            }));
+            
+            sections.push({
+              title: 'Pattern Loops',
+              data: patternLoopItems,
+              icon: 'loop',
+              color: '#8B5CF6'
+            });
+          }
+        }
+      } catch (memoryProfileError) {
+        console.log('⚠️ Memory profile failed to load, continuing with basic data only:', memoryProfileError);
+        // Continue without memory profile data - the page will still work with inner parts and snapshots
       }
 
       setMemorySections(sections);
@@ -247,22 +267,33 @@ export default function MemoryProfileScreen() {
 
   const getMemorySnapshots = async (userId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('memory_snapshots')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(20);
+      const result = await trpcClient.getMemorySnapshots(userId);
 
-      if (error) {
-        console.error('Error fetching memory snapshots:', error);
-        throw error;
+      if (!result.success) {
+        console.error('Error fetching memory snapshots:', result);
+        throw new Error('Failed to get memory snapshots');
       }
 
-      return data || [];
+      return result.snapshots || [];
     } catch (error) {
       console.error('Failed to get memory snapshots:', error);
       return [];
+    }
+  };
+
+  const getMemoryProfile = async (userId: string) => {
+    try {
+      const result = await trpcClient.getMemoryProfile(userId);
+
+      if (!result.success) {
+        console.error('Error fetching memory profile:', result);
+        return null;
+      }
+
+      return result.profile || null;
+    } catch (error) {
+      console.error('Failed to get memory profile:', error);
+      return null;
     }
   };
 
@@ -280,39 +311,60 @@ export default function MemoryProfileScreen() {
       console.log('✏️ Attempting to edit memory item:', editingItem.type, editingItem.id);
       console.log('✏️ New text:', editText.trim());
       
+      let success = false;
+      
       switch (editingItem.type) {
         case 'inner_part':
           await updateInnerPart(editingItem.id, editText.trim());
-          break;
-        case 'stuck_point':
-          await updateStuckPoint(editingItem.metadata.originalIndex, editText.trim());
-          break;
-        case 'coping_tool':
-          await updateCopingTool(editingItem.metadata.originalIndex, editText.trim());
-          break;
-        case 'shadow_theme':
-          await updateShadowTheme(editingItem.metadata.originalIndex, editText.trim());
-          break;
-        case 'pattern_loop':
-          await updatePatternLoop(editingItem.metadata.originalIndex, editText.trim());
+          success = true;
           break;
         case 'memory_snapshot':
           await updateMemorySnapshot(editingItem.id, editText.trim());
+          success = true;
           break;
+        case 'stuck_point':
+        case 'coping_tool':
+        case 'shadow_theme':
+        case 'pattern_loop':
+          // These require memory profile to be loaded
+          if (editingItem.metadata?.originalIndex !== undefined) {
+            switch (editingItem.type) {
+              case 'stuck_point':
+                await updateStuckPoint(editingItem.metadata.originalIndex, editText.trim());
+                break;
+              case 'coping_tool':
+                await updateCopingTool(editingItem.metadata.originalIndex, editText.trim());
+                break;
+              case 'shadow_theme':
+                await updateShadowTheme(editingItem.metadata.originalIndex, editText.trim());
+                break;
+              case 'pattern_loop':
+                await updatePatternLoop(editingItem.metadata.originalIndex, editText.trim());
+                break;
+            }
+            success = true;
+          } else {
+            throw new Error('Cannot edit this item - memory profile data not available');
+          }
+          break;
+        default:
+          throw new Error(`Unknown item type: ${editingItem.type}`);
       }
 
-      console.log('✅ Edit operation completed, reloading data...');
+      if (success) {
+        console.log('✅ Edit operation completed, reloading data...');
 
-      // Reload memory data first to ensure the edit was successful
-      await loadMemoryData(currentUserId);
+        // Reload memory data first to ensure the edit was successful
+        await loadMemoryData(currentUserId);
 
-      console.log('✅ Data reloaded, showing success message');
+        console.log('✅ Data reloaded, showing success message');
 
-      setToast({
-        visible: true,
-        message: 'Memory item updated successfully.',
-        type: 'success',
-      });
+        setToast({
+          visible: true,
+          message: 'Memory item updated successfully.',
+          type: 'success',
+        });
+      }
 
     } catch (error) {
       console.error('❌ Error updating memory item:', error);
@@ -342,18 +394,10 @@ export default function MemoryProfileScreen() {
     console.log('✏️ Parsed role:', role);
     console.log('✏️ Parsed description:', description);
 
-    const { error, count } = await supabase
-      .from('inner_parts')
-      .update({ 
-        role: role,
-        description: description,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id);
+    const result = await trpcClient.updateInnerPart(id, role, description);
 
-    console.log('✏️ Inner part update result:', { error, count });
-    if (error) throw error;
-    if (count === 0) throw new Error('No inner part found to update');
+    console.log('✏️ Inner part update result:', result);
+    if (!result.success) throw new Error('Failed to update inner part');
     console.log('✅ Inner part updated successfully');
   };
 
@@ -361,32 +405,10 @@ export default function MemoryProfileScreen() {
     console.log('✏️ Updating stuck point at index:', index);
     console.log('✏️ New text:', newText);
     
-    const { data: currentProfile } = await supabase
-      .from('memory_profiles')
-      .select('stuck_points')
-      .eq('user_id', currentUserId)
-      .single();
+    const result = await trpcClient.updateStuckPoint(currentUserId!, index, newText);
 
-    if (!currentProfile) throw new Error('Memory profile not found');
-    if (!currentProfile.stuck_points || currentProfile.stuck_points.length <= index) {
-      throw new Error('Stuck point not found');
-    }
-
-    console.log('✏️ Current stuck points:', currentProfile.stuck_points);
-    const updatedStuckPoints = [...currentProfile.stuck_points];
-    updatedStuckPoints[index] = newText;
-    console.log('✏️ Updated stuck points:', updatedStuckPoints);
-
-    const { error } = await supabase
-      .from('memory_profiles')
-      .update({ 
-        stuck_points: updatedStuckPoints,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', currentUserId);
-
-    console.log('✏️ Stuck point update result:', { error });
-    if (error) throw error;
+    console.log('✏️ Stuck point update result:', result);
+    if (!result.success) throw new Error('Failed to update stuck point');
     console.log('✅ Stuck point updated successfully');
   };
 
@@ -394,32 +416,10 @@ export default function MemoryProfileScreen() {
     console.log('✏️ Updating coping tool at index:', index);
     console.log('✏️ New text:', newText);
     
-    const { data: currentProfile } = await supabase
-      .from('memory_profiles')
-      .select('coping_tools')
-      .eq('user_id', currentUserId)
-      .single();
+    const result = await trpcClient.updateCopingTool(currentUserId!, index, newText);
 
-    if (!currentProfile) throw new Error('Memory profile not found');
-    if (!currentProfile.coping_tools || currentProfile.coping_tools.length <= index) {
-      throw new Error('Coping tool not found');
-    }
-
-    console.log('✏️ Current coping tools:', currentProfile.coping_tools);
-    const updatedCopingTools = [...currentProfile.coping_tools];
-    updatedCopingTools[index] = newText;
-    console.log('✏️ Updated coping tools:', updatedCopingTools);
-
-    const { error } = await supabase
-      .from('memory_profiles')
-      .update({ 
-        coping_tools: updatedCopingTools,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', currentUserId);
-
-    console.log('✏️ Coping tool update result:', { error });
-    if (error) throw error;
+    console.log('✏️ Coping tool update result:', result);
+    if (!result.success) throw new Error('Failed to update coping tool');
     console.log('✅ Coping tool updated successfully');
   };
 
@@ -427,14 +427,10 @@ export default function MemoryProfileScreen() {
     console.log('✏️ Updating memory snapshot with ID:', id);
     console.log('✏️ New text:', newText);
     
-    const { error, count } = await supabase
-      .from('memory_snapshots')
-      .update({ summary: newText })
-      .eq('id', id);
+    const result = await trpcClient.updateMemorySnapshot(id, newText);
 
-    console.log('✏️ Memory snapshot update result:', { error, count });
-    if (error) throw error;
-    if (count === 0) throw new Error('No memory snapshot found to update');
+    console.log('✏️ Memory snapshot update result:', result);
+    if (!result.success) throw new Error('Failed to update memory snapshot');
     console.log('✅ Memory snapshot updated successfully');
   };
 
@@ -442,32 +438,10 @@ export default function MemoryProfileScreen() {
     console.log('✏️ Updating shadow theme at index:', index);
     console.log('✏️ New text:', newText);
     
-    const { data: currentProfile } = await supabase
-      .from('memory_profiles')
-      .select('shadow_themes')
-      .eq('user_id', currentUserId)
-      .single();
+    const result = await trpcClient.updateShadowTheme(currentUserId!, index, newText);
 
-    if (!currentProfile) throw new Error('Memory profile not found');
-    if (!currentProfile.shadow_themes || currentProfile.shadow_themes.length <= index) {
-      throw new Error('Shadow theme not found');
-    }
-
-    console.log('✏️ Current shadow themes:', currentProfile.shadow_themes);
-    const updatedShadowThemes = [...currentProfile.shadow_themes];
-    updatedShadowThemes[index] = newText;
-    console.log('✏️ Updated shadow themes:', updatedShadowThemes);
-
-    const { error } = await supabase
-      .from('memory_profiles')
-      .update({ 
-        shadow_themes: updatedShadowThemes,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', currentUserId);
-
-    console.log('✏️ Shadow theme update result:', { error });
-    if (error) throw error;
+    console.log('✏️ Shadow theme update result:', result);
+    if (!result.success) throw new Error('Failed to update shadow theme');
     console.log('✅ Shadow theme updated successfully');
   };
 
@@ -475,32 +449,10 @@ export default function MemoryProfileScreen() {
     console.log('✏️ Updating pattern loop at index:', index);
     console.log('✏️ New text:', newText);
     
-    const { data: currentProfile } = await supabase
-      .from('memory_profiles')
-      .select('pattern_loops')
-      .eq('user_id', currentUserId)
-      .single();
+    const result = await trpcClient.updatePatternLoop(currentUserId!, index, newText);
 
-    if (!currentProfile) throw new Error('Memory profile not found');
-    if (!currentProfile.pattern_loops || currentProfile.pattern_loops.length <= index) {
-      throw new Error('Pattern loop not found');
-    }
-
-    console.log('✏️ Current pattern loops:', currentProfile.pattern_loops);
-    const updatedPatternLoops = [...currentProfile.pattern_loops];
-    updatedPatternLoops[index] = newText;
-    console.log('✏️ Updated pattern loops:', updatedPatternLoops);
-
-    const { error } = await supabase
-      .from('memory_profiles')
-      .update({ 
-        pattern_loops: updatedPatternLoops,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', currentUserId);
-
-    console.log('✏️ Pattern loop update result:', { error });
-    if (error) throw error;
+    console.log('✏️ Pattern loop update result:', result);
+    if (!result.success) throw new Error('Failed to update pattern loop');
     console.log('✅ Pattern loop updated successfully');
   };
 
@@ -521,41 +473,62 @@ export default function MemoryProfileScreen() {
     try {
       console.log('🗑️ Attempting to delete memory item:', item.type, item.id);
       
+      let success = false;
+      
       // Perform the delete operation
       switch (item.type) {
         case 'inner_part':
           await deleteInnerPart(item.id);
-          break;
-        case 'stuck_point':
-          await deleteStuckPoint(item.metadata.originalIndex);
-          break;
-        case 'coping_tool':
-          await deleteCopingTool(item.metadata.originalIndex);
-          break;
-        case 'shadow_theme':
-          await deleteShadowTheme(item.metadata.originalIndex);
-          break;
-        case 'pattern_loop':
-          await deletePatternLoop(item.metadata.originalIndex);
+          success = true;
           break;
         case 'memory_snapshot':
           await deleteMemorySnapshot(item.id);
+          success = true;
           break;
+        case 'stuck_point':
+        case 'coping_tool':
+        case 'shadow_theme':
+        case 'pattern_loop':
+          // These require memory profile to be loaded
+          if (item.metadata?.originalIndex !== undefined) {
+            switch (item.type) {
+              case 'stuck_point':
+                await deleteStuckPoint(item.metadata.originalIndex);
+                break;
+              case 'coping_tool':
+                await deleteCopingTool(item.metadata.originalIndex);
+                break;
+              case 'shadow_theme':
+                await deleteShadowTheme(item.metadata.originalIndex);
+                break;
+              case 'pattern_loop':
+                await deletePatternLoop(item.metadata.originalIndex);
+                break;
+            }
+            success = true;
+          } else {
+            throw new Error('Cannot delete this item - memory profile data not available');
+          }
+          break;
+        default:
+          throw new Error(`Unknown item type: ${item.type}`);
       }
 
-      console.log('✅ Delete operation completed, reloading data...');
+      if (success) {
+        console.log('✅ Delete operation completed, reloading data...');
 
-      // Reload memory data first to ensure the deletion was successful
-      await loadMemoryData(currentUserId);
+        // Reload memory data first to ensure the deletion was successful
+        await loadMemoryData(currentUserId);
 
-      console.log('✅ Data reloaded, showing success message');
+        console.log('✅ Data reloaded, showing success message');
 
-      // Only show success message after confirming the data was refreshed
-      setToast({
-        visible: true,
-        message: 'Memory item deleted successfully.',
-        type: 'success',
-      });
+        // Only show success message after confirming the data was refreshed
+        setToast({
+          visible: true,
+          message: 'Memory item deleted successfully.',
+          type: 'success',
+        });
+      }
 
     } catch (error) {
       console.error('❌ Error deleting memory item:', error);
@@ -572,206 +545,143 @@ export default function MemoryProfileScreen() {
 
   const deleteInnerPart = async (id: string) => {
     console.log('🗑️ Deleting inner part with ID:', id);
-    const { error, count } = await supabase
-      .from('inner_parts')
-      .delete()
-      .eq('id', id);
+    const result = await trpcClient.deleteInnerPart(id);
 
-    console.log('🗑️ Inner part delete result:', { error, count });
-    if (error) throw error;
-    if (count === 0) throw new Error('No inner part found to delete');
+    console.log('🗑️ Inner part delete result:', result);
+    if (!result.success) throw new Error('Failed to delete inner part');
     console.log('✅ Inner part deleted successfully');
   };
 
   const deleteStuckPoint = async (index: number) => {
     console.log('🗑️ Deleting stuck point at index:', index);
     
-    const { data: currentProfile } = await supabase
-      .from('memory_profiles')
-      .select('stuck_points')
-      .eq('user_id', currentUserId)
-      .single();
+    const result = await trpcClient.deleteStuckPoint(currentUserId!, index);
 
-    if (!currentProfile) throw new Error('Memory profile not found');
-    if (!currentProfile.stuck_points || currentProfile.stuck_points.length <= index) {
-      throw new Error('Stuck point not found');
-    }
-
-    console.log('🗑️ Current stuck points:', currentProfile.stuck_points);
-    const updatedStuckPoints = currentProfile.stuck_points.filter((_: string, i: number) => i !== index);
-    console.log('🗑️ Updated stuck points:', updatedStuckPoints);
-
-    const { error } = await supabase
-      .from('memory_profiles')
-      .update({ 
-        stuck_points: updatedStuckPoints,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', currentUserId);
-
-    console.log('🗑️ Stuck point update result:', { error });
-    if (error) throw error;
+    console.log('🗑️ Stuck point delete result:', result);
+    if (!result.success) throw new Error('Failed to delete stuck point');
     console.log('✅ Stuck point deleted successfully');
   };
 
   const deleteCopingTool = async (index: number) => {
     console.log('🗑️ Deleting coping tool at index:', index);
     
-    const { data: currentProfile } = await supabase
-      .from('memory_profiles')
-      .select('coping_tools')
-      .eq('user_id', currentUserId)
-      .single();
+    const result = await trpcClient.deleteCopingTool(currentUserId!, index);
 
-    if (!currentProfile) throw new Error('Memory profile not found');
-    if (!currentProfile.coping_tools || currentProfile.coping_tools.length <= index) {
-      throw new Error('Coping tool not found');
-    }
-
-    console.log('🗑️ Current coping tools:', currentProfile.coping_tools);
-    const updatedCopingTools = currentProfile.coping_tools.filter((_: string, i: number) => i !== index);
-    console.log('🗑️ Updated coping tools:', updatedCopingTools);
-
-    const { error } = await supabase
-      .from('memory_profiles')
-      .update({ 
-        coping_tools: updatedCopingTools,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', currentUserId);
-
-    console.log('🗑️ Coping tool update result:', { error });
-    if (error) throw error;
+    console.log('🗑️ Coping tool delete result:', result);
+    if (!result.success) throw new Error('Failed to delete coping tool');
     console.log('✅ Coping tool deleted successfully');
   };
 
   const deleteMemorySnapshot = async (id: string) => {
     console.log('🗑️ Deleting memory snapshot with ID:', id);
-    const { error, count } = await supabase
-      .from('memory_snapshots')
-      .delete()
-      .eq('id', id);
+    const result = await trpcClient.deleteMemorySnapshot(id);
 
-    console.log('🗑️ Memory snapshot delete result:', { error, count });
-    if (error) throw error;
-    if (count === 0) throw new Error('No memory snapshot found to delete');
+    console.log('🗑️ Memory snapshot delete result:', result);
+    if (!result.success) throw new Error('Failed to delete memory snapshot');
     console.log('✅ Memory snapshot deleted successfully');
   };
 
   const deleteShadowTheme = async (index: number) => {
     console.log('🗑️ Deleting shadow theme at index:', index);
     
-    const { data: currentProfile } = await supabase
-      .from('memory_profiles')
-      .select('shadow_themes')
-      .eq('user_id', currentUserId)
-      .single();
+    const result = await trpcClient.deleteShadowTheme(currentUserId!, index);
 
-    if (!currentProfile) throw new Error('Memory profile not found');
-    if (!currentProfile.shadow_themes || currentProfile.shadow_themes.length <= index) {
-      throw new Error('Shadow theme not found');
-    }
-
-    console.log('🗑️ Current shadow themes:', currentProfile.shadow_themes);
-    const updatedShadowThemes = currentProfile.shadow_themes.filter((_: string, i: number) => i !== index);
-    console.log('🗑️ Updated shadow themes:', updatedShadowThemes);
-
-    const { error } = await supabase
-      .from('memory_profiles')
-      .update({ 
-        shadow_themes: updatedShadowThemes,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', currentUserId);
-
-    console.log('🗑️ Shadow theme update result:', { error });
-    if (error) throw error;
+    console.log('🗑️ Shadow theme delete result:', result);
+    if (!result.success) throw new Error('Failed to delete shadow theme');
     console.log('✅ Shadow theme deleted successfully');
   };
 
   const deletePatternLoop = async (index: number) => {
     console.log('🗑️ Deleting pattern loop at index:', index);
     
-    const { data: currentProfile } = await supabase
-      .from('memory_profiles')
-      .select('pattern_loops')
-      .eq('user_id', currentUserId)
-      .single();
+    const result = await trpcClient.deletePatternLoop(currentUserId!, index);
 
-    if (!currentProfile) throw new Error('Memory profile not found');
-    if (!currentProfile.pattern_loops || currentProfile.pattern_loops.length <= index) {
-      throw new Error('Pattern loop not found');
-    }
-
-    console.log('🗑️ Current pattern loops:', currentProfile.pattern_loops);
-    const updatedPatternLoops = currentProfile.pattern_loops.filter((_: string, i: number) => i !== index);
-    console.log('🗑️ Updated pattern loops:', updatedPatternLoops);
-
-    const { error } = await supabase
-      .from('memory_profiles')
-      .update({ 
-        pattern_loops: updatedPatternLoops,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', currentUserId);
-
-    console.log('🗑️ Pattern loop update result:', { error });
-    if (error) throw error;
+    console.log('🗑️ Pattern loop delete result:', result);
+    if (!result.success) throw new Error('Failed to delete pattern loop');
     console.log('✅ Pattern loop deleted successfully');
   };
 
-  const renderMemoryItem = ({ item }: { item: MemoryItem }) => (
-    <View className="bg-white rounded-2xl p-4 mb-3">
-      <View className="flex-row items-start justify-between mb-2">
-        <View className="flex-1">
-          <View className="flex-row items-center mb-1">
-            <Text className="text-sm font-medium text-gray-600">
-              {item.title}
-            </Text>
+  const renderMemoryItem = ({ item }: { item: MemoryItem }) => {
+    // Check if this item type requires memory profile data and might not be editable
+    const requiresMemoryProfile = ['stuck_point', 'coping_tool', 'shadow_theme', 'pattern_loop'].includes(item.type);
+    const hasValidMetadata = item.metadata?.originalIndex !== undefined;
+    const isEditable = !requiresMemoryProfile || hasValidMetadata;
 
-            {item.type === 'inner_part' && item.metadata?.tone && (
-              <View className="ml-2 px-2 py-1 bg-purple-100 rounded-full">
-                <Text className="text-xs text-purple-700 font-medium">
-                  {item.metadata.tone}
-                </Text>
+    return (
+      <View className="bg-white rounded-2xl p-4 mb-3">
+        <View className="flex-row items-start justify-between mb-2">
+          <View className="flex-1">
+            <View className="flex-row items-center mb-1">
+              <Text className="text-sm font-medium text-gray-600">
+                {item.title}
+              </Text>
+
+              {item.type === 'inner_part' && item.metadata?.tone && (
+                <View className="ml-2 px-2 py-1 bg-purple-100 rounded-full">
+                  <Text className="text-xs text-purple-700 font-medium">
+                    {item.metadata.tone}
+                  </Text>
+                </View>
+              )}
+              
+              {!isEditable && (
+                <View className="ml-2 px-2 py-1 bg-gray-100 rounded-full">
+                  <Text className="text-xs text-gray-500 font-medium">
+                    Read Only
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text className="text-base text-gray-900 leading-5">
+              {item.content}
+            </Text>
+            {item.type === 'memory_snapshot' && item.metadata?.themes && (
+              <View className="mt-2 flex-row flex-wrap">
+                {item.metadata.themes.map((theme: string, index: number) => (
+                  <View key={index} className="mr-2 mb-1 px-2 py-1 bg-yellow-100 rounded-full">
+                    <Text className="text-xs text-yellow-700 font-medium">
+                      {theme}
+                    </Text>
+                  </View>
+                ))}
               </View>
             )}
           </View>
-          <Text className="text-base text-gray-900 leading-5">
-            {item.content}
-          </Text>
-          {item.type === 'memory_snapshot' && item.metadata?.themes && (
-            <View className="mt-2 flex-row flex-wrap">
-              {item.metadata.themes.map((theme: string, index: number) => (
-                <View key={index} className="mr-2 mb-1 px-2 py-1 bg-yellow-100 rounded-full">
-                  <Text className="text-xs text-yellow-700 font-medium">
-                    {theme}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
+          <View className="flex-row ml-2">
+            <TouchableOpacity
+              onPress={() => handleEditItem(item)}
+              disabled={!isEditable}
+              className={`w-8 h-8 rounded-full items-center justify-center mr-2 ${
+                isEditable ? 'bg-gray-100' : 'bg-gray-50'
+              }`}
+            >
+              <MaterialIcons 
+                name="edit" 
+                size={16} 
+                color={isEditable ? "#6B7280" : "#D1D5DB"} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => handleDeleteItem(item)}
+              disabled={!isEditable}
+              className={`w-8 h-8 rounded-full items-center justify-center ${
+                isEditable ? 'bg-orange-100' : 'bg-gray-50'
+              }`}
+            >
+              <MaterialIcons 
+                name="delete" 
+                size={16} 
+                color={isEditable ? "#F7941D" : "#D1D5DB"} 
+              />
+            </TouchableOpacity>
+          </View>
         </View>
-        <View className="flex-row ml-2">
-          <TouchableOpacity
-            onPress={() => handleEditItem(item)}
-            className="w-8 h-8 rounded-full bg-gray-100 items-center justify-center mr-2"
-          >
-            <MaterialIcons name="edit" size={16} color="#6B7280" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleDeleteItem(item)}
-            className="w-8 h-8 rounded-full bg-orange-100 items-center justify-center"
-          >
-            <MaterialIcons name="delete" size={16} color="#F7941D" />
-          </TouchableOpacity>
-        </View>
+        <Text className="text-xs text-gray-400">
+          {new Date(item.createdAt).toLocaleDateString()}
+        </Text>
       </View>
-      <Text className="text-xs text-gray-400">
-        {new Date(item.createdAt).toLocaleDateString()}
-      </Text>
-    </View>
-  );
+    );
+  };
 
   const renderSection = ({ item }: { item: MemorySection }) => (
     <View className="mb-6">

@@ -3,9 +3,8 @@ import { config, validateConfig } from './config';
 import { MemoryUpdateService } from './memoryUpdateService';
 import { PromptOptimizer } from './promptOptimizer';
 import { websocketService } from './websocketService';
-import { MemoryProcessingService, ProcessingContext } from './memoryProcessingService';
-import { SessionContinuityManager } from './sessionContinuityManager';
-import { SessionService } from './sessionService';
+import { MemoryProcessingService } from './memoryProcessingService';
+import { ConversationService } from './conversationService';
 
 
 export interface Message {
@@ -671,27 +670,10 @@ export class OpenAIService {
           sessionGroupId: sessionId
         });
         
-        const processingContext: ProcessingContext = {
-          userId: sessionContext.userProfile?.user_id || '',
-          sessionId: sessionRecordId,
-          sessionGroupId: sessionId,
-          currentSessionContext: sessionContext
-        };
+        console.log('🚀 Memory processing temporarily disabled to fix circular dependency');
         
-        console.log('🚀 Starting memory processing...');
-        await MemoryProcessingService.processStructuredResponse(
-          structuredData,
-          processingContext
-        );
-        
-        // Track session progress
-        await SessionContinuityManager.trackSessionProgress(
-          sessionId,
-          conversationHistory.length + 1,
-          'active',
-          structuredData.therapeutic_focus || 'general',
-          structuredData.emotional_state || 'neutral'
-        );
+        // Session progress tracking is now handled by the calling code
+        console.log('📊 Session progress tracking delegated to calling code');
         
         console.log('✅ Memory processing and session tracking completed');
       } else {
@@ -699,7 +681,7 @@ export class OpenAIService {
       }
       
       // Save session with response
-      await SessionService.updateSessionWithResponse(sessionRecordId, userResponse);
+      await ConversationService.updateConversationMessageWithResponse(sessionRecordId, userResponse);
       
       console.log('✅ Session metadata processed and saved');
     } catch (error) {

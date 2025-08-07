@@ -1,5 +1,5 @@
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { trpcClient } from '../lib/trpcClient';
 
 export interface OnboardingData {
   step1?: {
@@ -66,21 +66,25 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
   // Listen for auth state changes to clear data when user signs out
   useEffect(() => {
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('🔄 Auth state change in OnboardingProvider:', event, session ? 'Logged in' : 'Logged out');
-      
-      if (event === 'SIGNED_OUT') {
-        console.log('🚪 User signed out, clearing onboarding data');
-        setCurrentUserId(null);
-        setOnboardingData({});
-        setIsLoading(false);
-      } else if (event === 'SIGNED_IN' && session?.user) {
-        console.log('🚪 User signed in, will load onboarding data for:', session.user.id);
-        setCurrentUserId(session.user.id);
-      }
-    });
-
-    return () => listener?.subscription.unsubscribe();
+    // TODO: Implement with tRPC authentication
+    console.log('🔄 Auth state change listener - TODO: implement with tRPC');
+    
+    // Temporary placeholder - will be implemented with tRPC
+    // const { data: listener } = await trpcClient.onAuthStateChange((event, session) => {
+    //   console.log('🔄 Auth state change in OnboardingProvider:', event, session ? 'Logged in' : 'Logged out');
+    //   
+    //   if (event === 'SIGNED_OUT') {
+    //     console.log('🚪 User signed out, clearing onboarding data');
+    //     setCurrentUserId(null);
+    //     setOnboardingData({});
+    //     setIsLoading(false);
+    //   } else if (event === 'SIGNED_IN' && session?.user) {
+    //     console.log('🚪 User signed in, will load onboarding data for:', session.user.id);
+    //     setCurrentUserId(session.user.id);
+    //   }
+    // });
+    // 
+    // return () => listener?.subscription.unsubscribe();
   }, []);
 
   const updateStepData = (step: keyof OnboardingData, data: any) => {
@@ -124,9 +128,10 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
   const saveOnboardingToDatabase = async (dataToSave?: OnboardingData) => {
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      // Get current user from tRPC
+      const user = await trpcClient.getCurrentUser();
       
-      if (userError || !user) {
+      if (!user) {
         console.log('User not authenticated, skipping database save');
         return;
       }
@@ -135,24 +140,14 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       const dataToPersist = dataToSave || onboardingData;
       console.log(`🔍 Data to persist:`, dataToPersist);
 
-      // Upsert onboarding data
-      const { error } = await supabase
-        .from('onboarding_progress')
-        .upsert([
-          {
-            user_id: user.id,
-            onboarding_data: dataToPersist,
-            updated_at: new Date().toISOString()
-          }
-        ], {
-          onConflict: 'user_id'
-        });
+      // Upsert onboarding data via tRPC
+      await trpcClient.upsertOnboardingProgress(
+        user.id,
+        new Date().toISOString(),
+        dataToPersist
+      );
 
-      if (error) {
-        console.error('Error saving onboarding data:', error);
-      } else {
-        console.log('✅ Onboarding data saved successfully');
-      }
+      console.log('✅ Onboarding data saved successfully');
     } catch (error) {
       console.error('Error in saveOnboardingToDatabase:', error);
     }
@@ -161,9 +156,11 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const loadOnboardingFromDatabase = async () => {
     try {
       console.log('🔄 Starting to load onboarding data from database...');
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
       
-      if (userError || !user) {
+      // Get current user from tRPC
+      const user = await trpcClient.getCurrentUser();
+      
+      if (!user) {
         console.log('User not authenticated, skipping database load');
         setCurrentUserId(null);
         setOnboardingData({});
@@ -181,41 +178,13 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       }
 
       console.log('🔍 Querying onboarding_progress for user_id:', user.id);
-      const { data, error } = await supabase
-        .from('onboarding_progress')
-        .select('onboarding_data')
-        .eq('user_id', user.id)
-        .single();
-
-      console.log('🔍 Database query result - data:', data);
-      console.log('🔍 Database query result - error:', error);
-      console.log('🔍 Database query result - error code:', error?.code);
-      console.log('🔍 Database query result - error message:', error?.message);
-
-      if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
-        console.error('Error loading onboarding data:', error);
-      } else if (data?.onboarding_data) {
+      const data = await trpcClient.getOnboardingProgress(user.id);
+      
+      if (data?.onboarding_data) {
         console.log('📥 Loaded onboarding data from database:', data.onboarding_data);
-        console.log('📥 Data type:', typeof data.onboarding_data);
-        console.log('📥 Data keys:', Object.keys(data.onboarding_data));
-        console.log('📥 Step1 data:', data.onboarding_data.step1);
-        console.log('📥 Step5 data:', data.onboarding_data.step5);
-        
-        // Verify this data is for the current user
-        console.log('🔍 Verifying data is for current user:', user.id);
-        
-        console.log('🔄 About to call setOnboardingData with:', data.onboarding_data);
         setOnboardingData(data.onboarding_data);
-        console.log('✅ setOnboardingData called successfully');
-        
-        // Add a small delay to check if the state was actually updated
-        setTimeout(() => {
-          console.log('⏰ After setOnboardingData delay - checking if state was updated');
-        }, 100);
       } else {
         console.log('📥 No onboarding data found in database');
-        console.log('📥 Data object:', data);
-        console.log('📥 Data.onboarding_data:', data?.onboarding_data);
       }
     } catch (error) {
       console.error('Error in loadOnboardingFromDatabase:', error);
@@ -227,20 +196,15 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
   const clearOnboardingFromDatabase = async () => {
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      // Get current user from tRPC
+      const user = await trpcClient.getCurrentUser();
       
-      if (userError || !user) {
+      if (!user) {
         return;
       }
 
-      const { error } = await supabase
-        .from('onboarding_progress')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (error) {
-        console.error('Error clearing onboarding data:', error);
-      }
+      await trpcClient.deleteOnboardingProgress(user.id);
+      console.log('✅ Onboarding data cleared successfully');
     } catch (error) {
       console.error('Error in clearOnboardingFromDatabase:', error);
     }

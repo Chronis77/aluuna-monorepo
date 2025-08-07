@@ -1,4 +1,5 @@
-import { SessionContinuityService, SessionResumeContext } from './sessionContinuityService';
+import { SessionContinuityService, SessionResumeContext } from './conversationContinuityService';
+import { trpcClient } from './trpcClient';
 
 export interface SessionContinuity {
   sessionId: string;
@@ -12,10 +13,10 @@ export interface SessionContinuity {
   continuityContext: string;
 }
 
-export class SessionContinuityManager {
+export class ConversationContinuityManager {
   // Track session progress when user sends a message
   static async trackSessionProgress(
-    sessionId: string,
+    sessionGroupId: string,
     messageCount: number,
     sessionPhase: string,
     therapeuticFocus: string,
@@ -23,27 +24,26 @@ export class SessionContinuityManager {
   ): Promise<void> {
     try {
       console.log('🔍 SessionContinuityManager.trackSessionProgress called with:', {
-        sessionId,
+        sessionGroupId,
         messageCount,
         sessionPhase,
         therapeuticFocus,
         emotionalState
       });
       
-      // Extract user ID from session ID (assuming session ID contains user info)
-      // You may need to adjust this based on your session ID format
-      const userId = await this.getUserIdFromSession(sessionId);
+      // Extract user ID from session group ID
+      const userId = await this.getUserIdFromSessionGroup(sessionGroupId);
       
       console.log('🔍 Retrieved user ID:', userId);
       
       if (!userId) {
-        console.warn('Could not determine user ID for session:', sessionId);
+        console.warn('Could not determine user ID for session group:', sessionGroupId);
         return;
       }
 
       await SessionContinuityService.trackSessionProgress(
         userId,
-        sessionId,
+        sessionGroupId,
         messageCount,
         sessionPhase,
         therapeuticFocus,
@@ -51,7 +51,7 @@ export class SessionContinuityManager {
       );
       
       console.log('📊 Session Progress Tracked:', {
-        sessionId,
+        sessionGroupId,
         messageCount,
         sessionPhase,
         therapeuticFocus,
@@ -64,11 +64,11 @@ export class SessionContinuityManager {
   }
 
   // Initialize a new session (creates initial continuity record)
-  static async initializeSession(userId: string, sessionId: string): Promise<void> {
+  static async initializeSession(userId: string, sessionGroupId: string): Promise<void> {
     try {
-      await SessionContinuityService.initializeSession(userId, sessionId);
+      await SessionContinuityService.initializeSession(userId, sessionGroupId);
       console.log('📊 Session Initialized:', {
-        sessionId,
+        sessionGroupId,
         userId,
         timestamp: new Date().toISOString()
       });
@@ -78,9 +78,9 @@ export class SessionContinuityManager {
   }
 
   // Check if user is resuming a session and provide context
-  static async checkSessionResume(sessionId: string): Promise<SessionResumeContext> {
+  static async checkSessionResume(sessionGroupId: string): Promise<SessionResumeContext> {
     try {
-      const userId = await this.getUserIdFromSession(sessionId);
+      const userId = await this.getUserIdFromSessionGroup(sessionGroupId);
       
       if (!userId) {
         // New session or couldn't determine user
@@ -95,7 +95,7 @@ export class SessionContinuityManager {
         };
       }
 
-      return await SessionContinuityService.checkSessionResume(userId, sessionId);
+      return await SessionContinuityService.checkSessionResume(userId, sessionGroupId);
     } catch (error) {
       console.error('Error checking session resume:', error);
       // Return default new session context on error
@@ -174,15 +174,15 @@ export class SessionContinuityManager {
   }
 
   // Get session summary for resuming users
-  static async getSessionSummary(sessionId: string): Promise<string> {
+  static async getSessionSummary(sessionGroupId: string): Promise<string> {
     try {
-      const userId = await this.getUserIdFromSession(sessionId);
+      const userId = await this.getUserIdFromSessionGroup(sessionGroupId);
       
       if (!userId) {
         return 'New session';
       }
 
-      const continuity = await SessionContinuityService.getSessionContinuity(userId, sessionId);
+      const continuity = await SessionContinuityService.getSessionContinuity(userId, sessionGroupId);
       
       if (!continuity) {
         return 'New session';
@@ -196,33 +196,33 @@ export class SessionContinuityManager {
   }
 
   // Update session phase when it changes
-  static async updateSessionPhase(sessionId: string, newPhase: string): Promise<void> {
+  static async updateSessionPhase(sessionGroupId: string, newPhase: string): Promise<void> {
     try {
-      const userId = await this.getUserIdFromSession(sessionId);
+      const userId = await this.getUserIdFromSessionGroup(sessionGroupId);
       
       if (!userId) {
-        console.warn('Could not determine user ID for session:', sessionId);
+        console.warn('Could not determine user ID for session group:', sessionGroupId);
         return;
       }
 
-      await SessionContinuityService.updateSessionPhase(userId, sessionId, newPhase);
+      await SessionContinuityService.updateSessionPhase(userId, sessionGroupId, newPhase);
     } catch (error) {
       console.error('Error updating session phase:', error);
     }
   }
 
   // Clear session continuity when session ends
-  static async endSession(sessionId: string): Promise<void> {
+  static async endSession(sessionGroupId: string): Promise<void> {
     try {
-      const userId = await this.getUserIdFromSession(sessionId);
+      const userId = await this.getUserIdFromSessionGroup(sessionGroupId);
       
       if (!userId) {
-        console.warn('Could not determine user ID for session:', sessionId);
+        console.warn('Could not determine user ID for session group:', sessionGroupId);
         return;
       }
 
-      await SessionContinuityService.endSession(userId, sessionId);
-      console.log('📊 Session Ended:', sessionId);
+      await SessionContinuityService.endSession(userId, sessionGroupId);
+      console.log('📊 Session Ended:', sessionGroupId);
     } catch (error) {
       console.error('Error ending session:', error);
     }
@@ -239,15 +239,15 @@ export class SessionContinuityManager {
   }
 
   // Check if session is stale (inactive for too long)
-  static async isSessionStale(sessionId: string, maxInactiveMinutes: number = 1440): Promise<boolean> {
+  static async isSessionStale(sessionGroupId: string, maxInactiveMinutes: number = 1440): Promise<boolean> {
     try {
-      const userId = await this.getUserIdFromSession(sessionId);
+      const userId = await this.getUserIdFromSessionGroup(sessionGroupId);
       
       if (!userId) {
         return true;
       }
 
-      const continuity = await SessionContinuityService.getSessionContinuity(userId, sessionId);
+      const continuity = await SessionContinuityService.getSessionContinuity(userId, sessionGroupId);
       
       if (!continuity) {
         return true;
@@ -272,21 +272,25 @@ export class SessionContinuityManager {
     }
   }
 
-  // Helper method to get user ID from session ID
-  // You may need to adjust this based on your session ID format
-  private static async getUserIdFromSession(sessionId: string): Promise<string | null> {
+  // Helper method to get user ID from session group ID
+  private static async getUserIdFromSessionGroup(sessionGroupId: string): Promise<string | null> {
     try {
-      // Validate that sessionId is a proper UUID
-      if (!sessionId || sessionId === 'default' || !this.isValidUUID(sessionId)) {
-        console.warn('Invalid session ID provided:', sessionId);
+      // Validate that sessionGroupId is a proper UUID
+      if (!sessionGroupId || sessionGroupId === 'default' || !this.isValidUUID(sessionGroupId)) {
+        console.warn('Invalid session group ID provided:', sessionGroupId);
         return null;
       }
       
-      // For now, we'll try to get the current user from Supabase auth
-      const { data: { user } } = await import('./supabase').then(m => m.supabase.auth.getUser());
-      return user?.id || null;
+      // Get conversation details to extract user ID
+      const conversation = await trpcClient.getConversation(sessionGroupId);
+      if (conversation && conversation.user_id) {
+        return conversation.user_id;
+      }
+      
+      console.warn('Could not determine user ID for session group:', sessionGroupId);
+      return null;
     } catch (error) {
-      console.error('Error getting user ID from session:', error);
+      console.error('Error getting user ID from session group:', error);
       return null;
     }
   }

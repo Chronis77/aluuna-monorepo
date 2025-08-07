@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AluunaLoader } from '../components/AluunaLoader';
 import { Toast } from '../components/ui/Toast';
 import { MemoryProcessingService } from '../lib/memoryProcessingService';
-import { supabase } from '../lib/supabase';
+import { trpcClient } from '../lib/trpcClient';
 
 interface RelationshipItem {
   id: string;
@@ -63,7 +63,7 @@ export default function RelationshipsScreen() {
       setIsLoading(true);
       
       // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await trpcClient.getCurrentUser();
       if (!user) {
         router.replace('/login' as any);
         return;
@@ -181,18 +181,10 @@ export default function RelationshipsScreen() {
     console.log('✏️ Updating relationship with ID:', id);
     console.log('✏️ New data:', { name, role, notes });
     
-    const { error, count } = await supabase
-      .from('relationships')
-      .update({ 
-        name: name,
-        role: role,
-        notes: notes || null
-      })
-      .eq('id', id);
+    const result = await trpcClient.updateRelationship(id, name, role, notes || null);
 
-    console.log('✏️ Relationship update result:', { error, count });
-    if (error) throw error;
-    if (count === 0) throw new Error('No relationship found to update');
+    console.log('✏️ Relationship update result:', result);
+    if (!result.success) throw new Error('Failed to update relationship');
     console.log('✅ Relationship updated successfully');
   };
 
@@ -251,33 +243,27 @@ export default function RelationshipsScreen() {
       });
     };
     
-    const { error } = await supabase
-      .from('relationships')
-      .insert({
-        id: generateId(),
-        user_id: currentUserId,
-        name: name,
-        role: role,
-        notes: notes || null,
-        is_active: true
-      });
+    const result = await trpcClient.createRelationship({
+      id: generateId(),
+      user_id: currentUserId!,
+      name: name,
+      role: role,
+      notes: notes || null,
+      is_active: true
+    });
 
-    console.log('➕ Relationship create result:', { error });
-    if (error) throw error;
+    console.log('➕ Relationship create result:', result);
+    if (!result.success) throw new Error('Failed to create relationship');
     console.log('✅ Relationship created successfully');
   };
 
   const deleteRelationship = async (id: string) => {
     console.log('🗑️ Deleting relationship with ID:', id);
     
-    const { error, count } = await supabase
-      .from('relationships')
-      .delete()
-      .eq('id', id);
+    const result = await trpcClient.deleteRelationship(id);
 
-    console.log('🗑️ Relationship delete result:', { error, count });
-    if (error) throw error;
-    if (count === 0) throw new Error('No relationship found to delete');
+    console.log('🗑️ Relationship delete result:', result);
+    if (!result.success) throw new Error('Failed to delete relationship');
     console.log('✅ Relationship deleted successfully');
   };
 

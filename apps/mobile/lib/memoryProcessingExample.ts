@@ -1,7 +1,7 @@
 import { ContextService } from './contextService';
 import { MemoryProcessingService, ProcessingContext, StructuredResponse } from './memoryProcessingService';
 import { Message, OpenAIService } from './openaiService';
-import { supabase } from './supabase';
+import { trpcClient } from './trpcClient';
 
 /**
  * Example usage of the Memory Processing Service

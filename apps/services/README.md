@@ -1,433 +1,283 @@
-# Aluuna TTS Server
+# Aluuna Services - Modern TypeScript AI-First Therapy Server with Bun
 
-A Google Cloud Text-to-Speech server built with Node.js and Express, designed to work with the Aluuna React Native app.
+## 🚀 Overview
 
-## Features
+This is the completely rewritten Aluuna server using modern TypeScript, Bun runtime, tRPC, and OpenAI tool calling for AI-first mobile therapy. The server provides a scalable, type-safe API for the Aluuna mobile app.
 
-- 🎵 Google Cloud Text-to-Speech integration
-- 🔧 Docker and Docker Compose support
-- 🌐 CORS enabled for cross-origin requests
-- 📱 Optimized for React Native apps
-- 🎛️ Configurable voice and audio settings
-- 📊 Health check endpoints
-- 🧹 Automatic audio file cleanup
-- 🔒 Rate limiting (with Nginx)
-- 📁 Static file serving for generated audio
-- ☁️ **Vercel deployment ready** - Public domain for React Native apps
+## 🏗️ Architecture
 
-## Quick Start
+### Tech Stack
+- **Language**: TypeScript
+- **Runtime**: Bun (fast, modern JavaScript runtime)
+- **Framework**: tRPC + Zod for type-safe APIs
+- **Database**: PostgreSQL via Prisma ORM
+- **Cache**: Redis for memory profiles and session data
+- **LLM Integration**: OpenAI API with tool calling
+- **Deployment**: Railway
+- **Database Hosting**: Supabase
+
+### Key Features
+- ✅ **Type-safe APIs** with tRPC and Zod validation
+- ✅ **OpenAI Tool Calling** for dynamic database operations
+- ✅ **MCP (Model Context Protocol)** for personalized AI responses
+- ✅ **Redis Caching** for performance optimization
+- ✅ **Server-controlled architecture** - no direct DB access from mobile
+- ✅ **Modern TypeScript** with strict type checking
+- ✅ **Bun runtime** for superior performance and developer experience
+
+## 📁 Project Structure
+
+```
+src/
+├── api/                 # tRPC API endpoints
+│   ├── context.ts      # tRPC context with DB and Redis
+│   └── router.ts       # Main API router
+├── cache/              # Redis cache utilities
+│   └── redis.ts        # Redis client and cache helpers
+├── db/                 # Database layer
+│   └── client.ts       # Prisma client
+├── mcp/                # Model Context Protocol
+│   └── buildMCP.ts     # MCP builder and formatter
+├── openai/             # OpenAI integration
+│   └── client.ts       # OpenAI client with tool calling
+├── schemas/            # Zod schemas
+│   └── index.ts        # All API schemas and types
+├── tools/              # OpenAI tool handlers
+│   └── index.ts        # Tool definitions and handlers
+├── utils/              # Utilities
+│   └── logger.ts       # Winston logger
+└── index.ts            # Main server entry point
+```
+
+## 🔧 Setup & Installation
 
 ### Prerequisites
-
-- Docker and Docker Compose installed
-- Google Cloud credentials file (`google-creds.json`)
-
-### Option 1: Deploy to Vercel (Recommended for React Native)
-
-For React Native apps that need a public domain, deploy to Vercel:
-
-```bash
-# Install Vercel CLI
-npm install -g vercel
-
-# Deploy
-vercel
-
-# Add Google Cloud credentials as environment variable
-vercel env add GOOGLE_CREDENTIALS
-# Paste your google-creds.json content when prompted
-
-# Deploy to production
-vercel --prod
-```
-
-See [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md) for detailed instructions.
-
-### Option 2: Running with Docker Compose
-
-1. **Start the server:**
-   ```bash
-   docker-compose up -d
-   ```
-
-2. **Check if it's running:**
-   ```bash
-   curl http://localhost:3000/health
-   ```
-
-3. **Stop the server:**
-   ```bash
-   docker-compose down
-   ```
-
-### Development Mode
-
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-2. **Start the server:**
-   ```bash
-   npm run dev
-   ```
-
-## API Endpoints
-
-### Health Check
-```
-GET /health
-```
-Returns server status.
-
-### Get Available Voices
-```
-GET /voices
-```
-Returns list of available Google TTS voices.
-
-### Text-to-Speech
-```
-POST /tts
-```
-
-**Request Body:**
-```json
-{
-  "text": "Hello, this is a test message",
-  "voice": {
-    "languageCode": "en-US",
-    "name": "en-US-Standard-A",
-    "ssmlGender": "NEUTRAL"
-  },
-  "audioConfig": {
-    "audioEncoding": "MP3",
-    "speakingRate": 1.0,
-    "pitch": 0.0,
-    "volumeGainDb": 0.0
-  }
-}
-```
-
-**Response (Local/Docker):**
-```json
-{
-  "success": true,
-  "audioUrl": "http://localhost:3000/audio/tts_1234567890.mp3",
-  "filename": "tts_1234567890.mp3",
-  "text": "Hello, this is a test message",
-  "voice": { ... },
-  "audioConfig": { ... }
-}
-```
-
-**Response (Vercel):**
-```json
-{
-  "success": true,
-  "audioData": "base64EncodedAudioData...",
-  "audioFormat": "base64",
-  "text": "Hello, this is a test message",
-  "voice": { ... },
-  "audioConfig": { ... }
-}
-```
-
-### SSML Text-to-Speech
-```
-POST /tts/ssml
-```
-
-**Request Body:**
-```json
-{
-  "ssml": "<speak>Hello, this is a <break time='1s'/> test message</speak>",
-  "voice": {
-    "languageCode": "en-US",
-    "name": "en-US-Standard-A",
-    "ssmlGender": "NEUTRAL"
-  },
-  "audioConfig": {
-    "audioEncoding": "MP3",
-    "speakingRate": 1.0,
-    "pitch": 0.0,
-    "volumeGainDb": 0.0
-  }
-}
-```
-
-### Cleanup Audio Files
-```
-DELETE /audio/cleanup
-```
-Removes audio files older than 1 hour.
-
-## React Native Integration
-
-### Basic Usage (Vercel Deployment)
-
-```javascript
-import { Audio } from 'expo-av';
-
-const synthesizeSpeech = async (text) => {
-  try {
-    const API_KEY = 'your-production-api-key-here'; // Use key from generate-api-key.js
-    
-    const response = await fetch('https://your-project-name.vercel.app/tts', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': API_KEY
-      },
-      body: JSON.stringify({
-        text: text,
-        voice: {
-          languageCode: 'en-US',
-          name: 'en-US-Standard-A',
-          ssmlGender: 'NEUTRAL'
-        },
-        audioConfig: {
-          audioEncoding: 'MP3',
-          speakingRate: 1.0,
-          pitch: 0.0,
-          volumeGainDb: 0.0
-        }
-      })
-    });
-
-    const result = await response.json();
-    
-    if (result.success) {
-      // Convert base64 to audio blob
-      const audioBlob = new Blob([Buffer.from(result.audioData, 'base64')], {
-        type: 'audio/mp3'
-      });
-      
-      // Create audio URI from blob
-      const audioUri = URL.createObjectURL(audioBlob);
-      
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: audioUri }
-      );
-      await sound.playAsync();
-    }
-  } catch (error) {
-    console.error('TTS Error:', error);
-  }
-};
-```
-
-### Basic Usage (Local/Docker)
-
-```javascript
-import { Audio } from 'expo-av';
-
-const synthesizeSpeech = async (text) => {
-  try {
-    const API_KEY = 'your-development-api-key-here'; // Use key from generate-api-key.js
-    
-    const response = await fetch('http://your-server:3000/tts', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': API_KEY
-      },
-      body: JSON.stringify({
-        text: text,
-        voice: {
-          languageCode: 'en-US',
-          name: 'en-US-Standard-A',
-          ssmlGender: 'NEUTRAL'
-        },
-        audioConfig: {
-          audioEncoding: 'MP3',
-          speakingRate: 1.0,
-          pitch: 0.0,
-          volumeGainDb: 0.0
-        }
-      })
-    });
-
-    const result = await response.json();
-    
-    if (result.success) {
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: result.audioUrl }
-      );
-      await sound.playAsync();
-    }
-  } catch (error) {
-    console.error('TTS Error:', error);
-  }
-};
-```
-
-### Advanced Usage with Voice Selection
-
-```javascript
-const getVoices = async () => {
-  try {
-    const API_KEY = 'your-api-key-here';
-    const response = await fetch('http://your-server:3000/voices', {
-      headers: {
-        'x-api-key': API_KEY
-      }
-    });
-    const data = await response.json();
-    return data.voices;
-  } catch (error) {
-    console.error('Error fetching voices:', error);
-    return [];
-  }
-};
-
-const synthesizeWithVoice = async (text, voiceName) => {
-  try {
-    const API_KEY = 'your-api-key-here';
-    const response = await fetch('http://your-server:3000/tts', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': API_KEY
-      },
-      body: JSON.stringify({
-        text: text,
-        voice: {
-          languageCode: 'en-US',
-          name: voiceName,
-          ssmlGender: 'FEMALE'
-        }
-      })
-    });
-
-    const result = await response.json();
-    return result.audioUrl;
-  } catch (error) {
-    console.error('TTS Error:', error);
-    throw error;
-  }
-};
-```
-
-## Configuration
+- **Bun** (latest version) - [Install Bun](https://bun.sh/)
+- PostgreSQL database (Supabase recommended)
+- Redis instance
+- OpenAI API key
 
 ### Environment Variables
-
-Create a `.env` file in the root directory:
+Create a `.env` file:
 
 ```env
+# Server
 PORT=3000
-NODE_ENV=production
-API_KEY=your-development-api-key-here
+NODE_ENV=development
+
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/aluuna"
+
+# Redis
+REDIS_URL="redis://localhost:6379"
+
+# OpenAI
+OPENAI_API_KEY="sk-..."
+
+# Security
+ALUUNA_APP_API_KEY="your-secret-api-key"
+
+# CORS
+ALLOWED_ORIGINS="http://localhost:3000,https://your-app.com"
 ```
 
-### Security Best Practices
+### Installation
 
-⚠️ **IMPORTANT**: Never commit sensitive data to version control!
+1. **Install Bun** (if not already installed):
+   ```bash
+   curl -fsSL https://bun.sh/install | bash
+   ```
 
-1. **API Keys**: Store them as environment variables, never in code
-2. **Google Cloud Credentials**: Keep `google-creds.json` out of version control
-3. **Test Files**: Use `test-vercel.example.js` as a template, not with real keys
-4. **Environment Variables**: Use `.env` files for local development only
+2. **Install dependencies**:
+   ```bash
+   bun install
+   ```
 
-**For Testing:**
-```bash
-# Set API key as environment variable
-export API_KEY=your-actual-api-key
+3. **Generate Prisma client**:
+   ```bash
+   bunx prisma generate
+   ```
 
-# Run test with environment variable
-node test-vercel.js
+4. **Run database migrations**:
+   ```bash
+   bunx prisma db push
+   ```
+
+5. **Start development server**:
+   ```bash
+   bun run dev
+   ```
+
+## 🚀 API Endpoints
+
+### Health Check
+```http
+GET /health
 ```
 
-### Google Cloud Setup
+### tRPC Endpoints
 
-1. Enable the Cloud Text-to-Speech API in your Google Cloud Console
-2. Create a service account and download the credentials JSON file
-3. Place the credentials file as `google-creds.json` in the project root
+All API endpoints are available via tRPC at `/api/trpc`:
 
-## Production Deployment
-
-### With Nginx (Recommended)
-
-```bash
-docker-compose --profile production up -d
+#### Respond to User Input
+```typescript
+POST /api/trpc
+{
+  "procedure": "respond",
+  "input": {
+    "user_input": "I felt very angry today when my co-parent ignored my message.",
+    "mode": "free_journaling",
+    "mood_score": 4,
+    "session_context": { "session_type": "therapy" }
+  }
+}
 ```
 
-This will start both the TTS server and Nginx reverse proxy with:
-- Rate limiting (10 requests/second)
-- SSL support (configure certificates)
-- Audio file caching
-- Load balancing ready
-
-### SSL Configuration
-
-1. Create an `ssl` directory
-2. Add your SSL certificates:
-   - `ssl/cert.pem` - SSL certificate
-   - `ssl/key.pem` - Private key
-3. Uncomment HTTPS configuration in `nginx.conf`
-4. Restart the containers
-
-## Monitoring
-
-### Health Checks
-
-The server includes built-in health checks:
-
-```bash
-# Check server health
-curl http://localhost:3000/health
-
-# Check Docker container health
-docker ps
+#### Get Memory Profile
+```typescript
+POST /api/trpc
+{
+  "procedure": "getMemoryProfile",
+  "input": {
+    "userId": "user-123"
+  }
+}
 ```
 
-### Logs
-
-```bash
-# View server logs
-docker-compose logs -f aluuna-tts
-
-# View nginx logs
-docker-compose logs -f nginx
+#### Health Check
+```typescript
+POST /api/trpc
+{
+  "procedure": "health"
+}
 ```
 
-## Troubleshooting
+## 🧠 MCP (Model Context Protocol)
 
-### Common Issues
+The server builds comprehensive user context for AI responses:
 
-1. **Google Cloud Authentication Error**
-   - Ensure `google-creds.json` is properly mounted
-   - Verify the service account has Text-to-Speech API access
+### Memory Profile
+- User demographics and background
+- Long-term memory and current context
+- Goals, challenges, and coping strategies
+- Therapeutic focus and progress notes
 
-2. **API Key Authentication Error**
-   - Generate API keys using `node generate-api-key.js`
-   - Ensure the correct API key is used in requests
-   - Check that the API key is set as an environment variable
+### Inner Parts
+- Identified inner parts with roles and tones
+- Recent inner part discoveries
 
-3. **CORS Issues**
-   - The server includes CORS middleware
-   - For production, configure allowed origins in the server
+### Insights
+- AI-generated insights from sessions
+- Pattern recognition and themes
 
-4. **Audio Files Not Playing**
-   - Check if the audio URL is accessible
-   - Verify the audio file was generated successfully
+### Emotional Trends
+- Mood tracking over time
+- Emotional state patterns
 
-5. **Rate Limiting**
-   - Default limit is 10 requests/second
-   - Adjust in `nginx.conf` if needed
+### Recent Sessions
+- Session summaries and outcomes
+- Therapeutic progress tracking
 
-### Debug Mode
+## 🔧 OpenAI Tool Calling
 
-```bash
-# Run with debug logging
-NODE_ENV=development docker-compose up
+The server supports dynamic tool calling for:
+
+### Available Tools
+- `getMemoryProfile` - Retrieve user memory profile
+- `storeInsight` - Store new therapeutic insights
+- `logMoodTrend` - Log emotional trends
+- `storeInnerPart` - Store discovered inner parts
+
+### Tool Flow
+1. User sends input to server
+2. Server builds MCP context
+3. OpenAI receives context + user input
+4. OpenAI may call tools to update database
+5. Server processes tool calls and updates data
+6. OpenAI generates final response with updated context
+
+## 📱 Mobile App Integration
+
+The mobile app communicates exclusively through the server API:
+
+### Key Changes
+- ❌ **Removed**: Direct database access from mobile
+- ✅ **Added**: tRPC client for type-safe API calls
+- ✅ **Added**: Server-controlled data operations
+- ✅ **Added**: Centralized AI response generation
+
+### Example Mobile App Flow
+```typescript
+import { AIService } from './lib/aiService';
+
+// Send user input and get AI response
+const response = await AIService.respond({
+  user_input: "I felt very angry today when my co-parent ignored my message.",
+  mode: "free_journaling",
+  mood_score: 4
+});
+
+// Get memory profile
+const profile = await AIService.getMemoryProfile("user-123");
 ```
 
-## License
+## 🚀 Deployment
 
-MIT License - see LICENSE file for details.
+### Railway Deployment
+1. Connect your GitHub repository to Railway
+2. Set environment variables in Railway dashboard
+3. Deploy automatically on push to main branch
 
-## Support
+### Environment Variables for Production
+```env
+DATABASE_URL="postgresql://..."
+REDIS_URL="redis://..."
+OPENAI_API_KEY="sk-..."
+ALUUNA_APP_API_KEY="your-production-key"
+NODE_ENV="production"
+```
 
-For issues and questions, please create an issue in the repository. 
+## 🔒 Security
+
+- **API Key Authentication**: All endpoints require valid API key
+- **Rate Limiting**: 100 requests per 15 minutes per IP
+- **CORS Protection**: Configurable allowed origins
+- **Input Validation**: Zod schemas validate all inputs
+- **Error Handling**: Comprehensive error logging and handling
+
+## 📊 Monitoring & Logging
+
+- **Winston Logger**: Structured logging with file and console output
+- **Request Logging**: All API requests logged with metadata
+- **Error Tracking**: Detailed error logging with stack traces
+- **Performance Monitoring**: Response time and tool call tracking
+
+## 🔄 Migration from Old Server
+
+### Key Changes
+1. **Language**: JavaScript → TypeScript
+2. **Runtime**: Node.js → Bun
+3. **Architecture**: Monolith → tRPC + modular structure
+4. **Database Access**: Direct → Server-controlled via tools
+5. **Type Safety**: None → Full type safety with Zod
+6. **Caching**: None → Redis caching for performance
+7. **Tool Calling**: None → OpenAI function calling
+
+### Migration Steps
+1. Deploy new server to Railway
+2. Update mobile app to use tRPC client
+3. Remove all DB logic from frontend
+4. Test all functionality with new architecture
+5. Switch traffic to new server
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes with proper TypeScript types
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📄 License
+
+MIT License - see LICENSE file for details 

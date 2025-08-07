@@ -6,10 +6,11 @@ import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { StyledButton } from '../components/ui/StyledButton';
 import { StyledInput } from '../components/ui/StyledInput';
 import { Toast } from '../components/ui/Toast';
-import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const { signup } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -99,92 +100,31 @@ export default function RegisterScreen() {
     setErrors({});
 
     try {
-      // Create user with Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            name: name.trim(),
-          }
-        }
-      });
+      console.log('🔐 Attempting signup with email:', email);
+      const result = await signup(email, password, name.trim());
 
-      if (authError) {
-        // Check if it's a user already exists error
-        if (authError.message.includes('already registered') ||
-          authError.message.includes('already exists') ||
-          authError.message.includes('User already registered')) {
-          setToast({
-            visible: true,
-            message: 'An account with this email already exists. Please try logging in instead.',
-            type: 'error',
-          });
-        } else {
-          setToast({
-            visible: true,
-            message: authError.message,
-            type: 'error',
-          });
-        }
-        return;
-      }
-
-      if (authData.user) {
-        // Debug: Log user status
-        console.log('User created:', authData.user.id);
-        console.log('User email confirmed:', authData.user.email_confirmed_at);
-        console.log('User role:', authData.user.role);
-        
-        // Insert additional user data into the users table
-        const { error: profileError } = await supabase
-          .from('users')
-          .insert([
-            {
-              id: authData.user.id,
-              name: name.trim(),
-              email: email.toLowerCase(),
-              created_at: new Date().toISOString(),
-            }
-          ]);
-
-        if (profileError) {
-          console.error('Profile creation error:', profileError);
-
-          // Check if it's a duplicate key error (user already exists)
-          if (profileError.code === '23505') {
-            setToast({
-              visible: true,
-              message: 'An account with this email already exists. Please try logging in instead.',
-              type: 'error',
-            });
-            return;
-          }
-
-          // For other profile errors, still show success but log the error
-          console.error('Non-critical profile creation error:', profileError);
-        }
-
+      if (result.success) {
+        console.log('✅ Signup successful, redirecting to conversation');
         setToast({
           visible: true,
-          message: 'Your account has been created successfully. Please check your email to verify your account.',
+          message: 'Account created successfully!',
           type: 'success',
         });
-
-        // Navigate to onboarding after a short delay
-        setTimeout(() => {
-          router.replace('/onboarding/step1' as any);
-          setName('');
-          setEmail('');
-          setPassword('');
-          setConfirmPassword('');
-        }, 2000);
+        // Redirect to conversation page on successful signup
+        router.replace('/conversation' as any);
+      } else {
+        console.log('⚠️ Signup failed:', result.error);
+        setToast({
+          visible: true,
+          message: result.error || 'Signup failed',
+          type: 'error',
+        });
       }
     } catch (error) {
-      console.error('Registration error:', error);
+      console.error('❌ Unexpected signup error:', error);
       setToast({
         visible: true,
-        message: 'An unexpected error occurred. Please try again.',
+        message: 'An unexpected error occurred',
         type: 'error',
       });
     } finally {

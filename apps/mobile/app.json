@@ -20,7 +20,20 @@
           "audio"
         ],
         "CFBundleDisplayName": "Aluuna",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSExceptionMinimumTLSVersion": "1.0"
+            },
+            "172.28.152.95": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSExceptionMinimumTLSVersion": "1.0"
+            }
+          }
+        }
       }
     },
     "android": {
@@ -30,7 +43,8 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.aluuna.app",
-      "versionCode": 2
+      "versionCode": 2,
+      "usesCleartextTraffic": true
     },
     "web": {
       "bundler": "metro",

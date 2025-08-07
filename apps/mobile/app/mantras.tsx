@@ -17,8 +17,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AluunaLoader } from '../components/AluunaLoader';
 import { Toast } from '../components/ui/Toast';
+import { useAuth } from '../context/AuthContext';
 import { MemoryProcessingService } from '../lib/memoryProcessingService';
-import { supabase } from '../lib/supabase';
+import { trpcClient } from '../lib/trpcClient';
 
 interface MantraItem {
   id: string;
@@ -33,6 +34,7 @@ interface MantraItem {
 
 export default function MantrasScreen() {
   const router = useRouter();
+  const { session } = useAuth();
   const [mantras, setMantras] = useState<MantraItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -54,15 +56,27 @@ export default function MantrasScreen() {
 
   // Initialize the mantras screen
   useEffect(() => {
-    initializeMantras();
-  }, []);
+    if (session) {
+      initializeMantras();
+    } else {
+      // If no session, redirect to login
+      router.replace('/login' as any);
+    }
+  }, [session]);
 
   const initializeMantras = async () => {
     try {
       setIsLoading(true);
       
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
+      // Check if we have a valid session with token
+      if (!session?.token) {
+        console.error('No authentication token available');
+        router.replace('/login' as any);
+        return;
+      }
+      
+      // Get current user with token from session
+      const user = await trpcClient.getCurrentUser(session.token);
       if (!user) {
         router.replace('/login' as any);
         return;
@@ -93,7 +107,10 @@ export default function MantrasScreen() {
 
       console.log('🔄 Loaded mantras:', mantrasArray);
 
-      const mantraItems: MantraItem[] = mantrasArray.map((mantra: any) => ({
+      // Ensure we always set an array, even if the response is undefined
+      const safeMantrasArray = mantrasArray || [];
+
+      const mantraItems: MantraItem[] = safeMantrasArray.map((mantra: any) => ({
         id: mantra.id,
         content: mantra.text,
         source: mantra.source,
@@ -109,6 +126,8 @@ export default function MantrasScreen() {
 
     } catch (error) {
       console.error('❌ Error loading mantras data:', error);
+      // Set empty array on error to prevent filter issues
+      setMantras([]);
       setToast({
         visible: true,
         message: 'Failed to load mantras data. Please try again.',
@@ -222,16 +241,10 @@ export default function MantrasScreen() {
     console.log('✏️ Updating mantra with ID:', id);
     console.log('✏️ New text:', newText);
     
-    const { error, count } = await supabase
-      .from('mantras')
-      .update({ 
-        text: newText
-      })
-      .eq('id', id);
+    const result = await trpcClient.updateMantra(id, { text: newText });
 
-    console.log('✏️ Mantra update result:', { error, count });
-    if (error) throw error;
-    if (count === 0) throw new Error('No mantra found to update');
+    console.log('✏️ Mantra update result:', result);
+    if (!result.success) throw new Error('Failed to update mantra');
     console.log('✅ Mantra updated successfully');
   };
 
@@ -281,30 +294,17 @@ export default function MantrasScreen() {
   const createMantra = async (text: string) => {
     console.log('➕ Creating new mantra:', text);
     
-    // Generate a simple UUID-like string
-    const generateId = () => {
-      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        const r = Math.random() * 16 | 0;
-        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-      });
-    };
-    
-    const { error } = await supabase
-      .from('mantras')
-      .insert({
-        id: generateId(),
-        user_id: currentUserId,
-        text: text,
-        source: 'user_created',
-        created_at: new Date().toISOString(),
-        is_favorite: false,
-        tags: null,
-        is_pinned: false
-      });
+    const result = await trpcClient.createMantra({
+      user_id: currentUserId!,
+      text: text,
+      source: 'user_created',
+      is_favorite: false,
+      tags: null,
+      is_pinned: false
+    });
 
-    console.log('➕ Mantra create result:', { error });
-    if (error) throw error;
+    console.log('➕ Mantra create result:', result);
+    if (!result.success) throw new Error('Failed to create mantra');
     console.log('✅ Mantra created successfully');
   };
 
@@ -312,45 +312,20 @@ export default function MantrasScreen() {
     console.log('📌 Toggling mantra pin with ID:', id);
     console.log('📌 New pinned status:', isPinned);
     
-    // First, let's check if the mantra exists
-    const { data: existingMantra, error: fetchError } = await supabase
-      .from('mantras')
-      .select('*')
-      .eq('id', id)
-      .single();
+    const result = await trpcClient.updateMantra(id, { is_pinned: isPinned });
 
-    if (fetchError) {
-      console.error('📌 Error fetching mantra:', fetchError);
-      throw fetchError;
-    }
-
-    console.log('📌 Existing mantra data:', existingMantra);
-    
-    const { error, count, data } = await supabase
-      .from('mantras')
-      .update({ 
-        is_pinned: isPinned
-      })
-      .eq('id', id)
-      .select();
-
-    console.log('📌 Mantra pin toggle result:', { error, count, data });
-    if (error) throw error;
-    if (count === 0) throw new Error('No mantra found to update');
+    console.log('📌 Mantra pin toggle result:', result);
+    if (!result.success) throw new Error('Failed to toggle mantra pin');
     console.log('✅ Mantra pin toggled successfully');
   };
 
   const deleteMantra = async (id: string) => {
     console.log('🗑️ Deleting mantra with ID:', id);
     
-    const { error, count } = await supabase
-      .from('mantras')
-      .delete()
-      .eq('id', id);
+    const result = await trpcClient.deleteMantra(id);
 
-    console.log('🗑️ Mantra delete result:', { error, count });
-    if (error) throw error;
-    if (count === 0) throw new Error('No mantra found to delete');
+    console.log('🗑️ Mantra delete result:', result);
+    if (!result.success) throw new Error('Failed to delete mantra');
     console.log('✅ Mantra deleted successfully');
   };
 

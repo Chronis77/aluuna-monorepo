@@ -3,7 +3,6 @@ import React, { useState } from 'react';
 import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SkipWarningModal } from '../../components/onboarding/SkipWarningModal';
-import { supabase } from '../../lib/supabase';
 
 export default function OnboardingSkipScreen() {
   const router = useRouter();
@@ -13,30 +12,14 @@ export default function OnboardingSkipScreen() {
     setShowWarning(false);
     
     try {
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      // TODO: Implement with tRPC when user management is ready
+      console.log('Skipping onboarding - will be implemented with tRPC');
       
-      if (userError || !user) {
-        console.error('User not authenticated');
-        router.replace('/session' as any);
-        return;
-      }
-
-      // Update the user's onboarding_skipped flag in the users table
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ onboarding_skipped: true })
-        .eq('id', user.id);
-
-      if (updateError) {
-        console.error('Error setting onboarding skipped flag:', updateError);
-      }
-
       // Navigate to main app
-      router.replace('/session' as any);
+      router.replace('/conversation' as any);
     } catch (error) {
       console.error('Error in handleConfirmSkip:', error);
-      router.replace('/session' as any);
+      router.replace('/conversation' as any);
     }
   };
 

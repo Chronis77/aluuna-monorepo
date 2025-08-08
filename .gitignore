@@ -115,3 +115,9 @@ web-build/
 
 # Flipper
 ios/Pods/
+
+#offline database
+db_offline/
+
+#browser debugger
+browser_tests/

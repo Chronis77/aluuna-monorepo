@@ -9,7 +9,7 @@ import { z } from 'zod';
 // Import domain-specific routers
 import { authRouter } from './routers/auth.js';
 import { memoryRouter } from './routers/memory.js';
-import { memoryProfileRouter } from './routers/memoryProfile.js';
+import { userProfileRouter } from './routers/userProfile.js';
 import { onboardingRouter } from './routers/onboarding.js';
 import { conversationRouter } from './routers/conversation.js';
 import { userRouter } from './routers/user.js';
@@ -18,13 +18,27 @@ import { insightsRouter } from './routers/insights.js';
 import { mantrasRouter } from './routers/mantras.js';
 import { innerPartsRouter } from './routers/innerParts.js';
 
+// Import new specialized routers
+import { themesRouter } from './routers/themes.js';
+import { goalsRouter } from './routers/goals.js';
+import { copingToolsRouter } from './routers/copingTools.js';
+import { emotionalDataRouter } from './routers/emotionalData.js';
+import { lifestyleRouter } from './routers/lifestyle.js';
+import { relationshipsRouter } from './routers/relationships.js';
+import { riskAssessmentRouter } from './routers/riskAssessment.js';
+import { growthRouter } from './routers/growth.js';
+import { traumaPatternsRouter } from './routers/traumaPatterns.js';
+import { therapyRouter } from './routers/therapy.js';
+import { patternsRouter } from './routers/patterns.js';
+import { voiceRouter } from './routers/voice.js';
+
 const t = initTRPC.context<Context>().create();
 
 export const appRouter = t.router({
-  // Domain-specific routers
+  // Core domain routers
   auth: authRouter,
   memory: memoryRouter,
-  memoryProfile: memoryProfileRouter,
+  userProfile: userProfileRouter,
   onboarding: onboardingRouter,
   conversation: conversationRouter,
   user: userRouter,
@@ -32,6 +46,20 @@ export const appRouter = t.router({
   insights: insightsRouter,
   mantras: mantrasRouter,
   innerParts: innerPartsRouter,
+
+  // Specialized data management routers
+  themes: themesRouter,
+  goals: goalsRouter,
+  copingTools: copingToolsRouter,
+  emotionalData: emotionalDataRouter,
+  lifestyle: lifestyleRouter,
+  relationships: relationshipsRouter,
+  riskAssessment: riskAssessmentRouter,
+  growth: growthRouter,
+  traumaPatterns: traumaPatternsRouter,
+  therapy: therapyRouter,
+  patterns: patternsRouter,
+  voice: voiceRouter,
 
   // Core AI response procedure
   respond: t.procedure

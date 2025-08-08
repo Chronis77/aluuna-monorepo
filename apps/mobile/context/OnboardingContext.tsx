@@ -40,7 +40,7 @@ export interface OnboardingData {
 interface OnboardingContextType {
   onboardingData: OnboardingData;
   isLoading: boolean;
-  updateStepData: (step: keyof OnboardingData, data: any) => void;
+  updateStepData: (step: keyof OnboardingData, data: any) => Promise<void>;
   clearOnboardingData: () => void;
   saveOnboardingToDatabase: (dataToSave?: OnboardingData) => Promise<void>;
   loadOnboardingFromDatabase: () => Promise<void>;
@@ -87,16 +87,37 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     // return () => listener?.subscription.unsubscribe();
   }, []);
 
-  const updateStepData = (step: keyof OnboardingData, data: any) => {
+  const updateStepData = async (step: keyof OnboardingData, data: any) => {
     console.log(`🔄 Updating step ${step} with data:`, data);
-    setOnboardingData(prev => {
-      const updatedData = {
-        ...prev,
-        [step]: data
-      };
-      console.log(`📝 Updated onboarding data:`, updatedData);
-      return updatedData;
-    });
+
+    // Compute the next state once and use it for both state and DB write to avoid stale reads
+    const nextData: OnboardingData = {
+      ...onboardingData,
+      [step]: data,
+    };
+    console.log(`📝 Next onboarding data to persist:`, nextData);
+
+    // Update local state immediately
+    setOnboardingData(nextData);
+
+    // Save to database immediately and wait for completion
+    try {
+      const user = await trpcClient.getCurrentUser();
+      if (user) {
+        console.log(`💾 Saving step ${step} data to DB:`, nextData);
+        await trpcClient.upsertOnboardingProgress(
+          user.id,
+          new Date().toISOString(),
+          nextData
+        );
+        console.log(`✅ Step ${step} data saved successfully to database`);
+      } else {
+        console.warn('No user found, cannot save to database');
+      }
+    } catch (error) {
+      console.error(`❌ Error saving step ${step} data to database:`, error);
+      throw error; // Re-throw so the calling function knows the save failed
+    }
   };
 
   // Auto-save to database whenever onboardingData changes

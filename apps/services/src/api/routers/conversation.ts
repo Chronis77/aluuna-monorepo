@@ -2,8 +2,8 @@ import { initTRPC } from '@trpc/server';
 import { Context } from '../context.js';
 import { logger } from '../../utils/logger.js';
 import { z } from 'zod';
-import { prisma, forceConnectionReset } from '../../db/client.js';
-import { protectedProcedure, publicProcedure } from '../middleware/auth.js';
+import { prisma } from '../../db/client.js';
+import { protectedProcedure } from '../middleware/auth.js';
 
 const t = initTRPC.context<Context>().create();
 
@@ -16,9 +16,15 @@ export const conversationRouter = t.router({
     }))
     .query(async ({ input }) => {
       try {
-        // TODO: Implement with actual database
-        logger.info('Getting session continuity', { input });
-        return [];
+        const continuity = await prisma.user_conversation_continuity.findFirst({
+          where: {
+            user_id: input.p_user_id,
+            conversation_id: input.p_session_group_id
+          }
+        });
+        
+        logger.info('Getting session continuity', { input, found: !!continuity });
+        return continuity;
       } catch (error) {
         logger.error('Error fetching session continuity', { input, error });
         throw new Error('Failed to fetch session continuity');
@@ -37,9 +43,30 @@ export const conversationRouter = t.router({
     }))
     .mutation(async ({ input }) => {
       try {
-        // TODO: Implement with actual database
-        logger.info('Upserting session continuity', { input });
-        return 'session-continuity-id';
+        const continuity = await prisma.user_conversation_continuity.upsert({
+          where: { id: `${input.p_user_id}:${input.p_session_group_id}` },
+          update: {
+            last_message_count: input.p_last_message_count,
+            last_session_phase: input.p_last_session_phase,
+            last_therapeutic_focus: input.p_last_therapeutic_focus,
+            last_emotional_state: input.p_last_emotional_state,
+            is_resuming: input.p_is_resuming,
+            last_timestamp: new Date()
+          },
+          create: {
+            id: `${input.p_user_id}:${input.p_session_group_id}`,
+            user_id: input.p_user_id,
+            conversation_id: input.p_session_group_id,
+            last_message_count: input.p_last_message_count,
+            last_session_phase: input.p_last_session_phase,
+            last_therapeutic_focus: input.p_last_therapeutic_focus,
+            last_emotional_state: input.p_last_emotional_state,
+            is_resuming: input.p_is_resuming
+          }
+        });
+        
+        logger.info('Upserting session continuity', { input, id: continuity.id });
+        return continuity.id;
       } catch (error) {
         logger.error('Error upserting session continuity', { input, error });
         throw new Error('Failed to upsert session continuity');
@@ -53,7 +80,13 @@ export const conversationRouter = t.router({
     }))
     .mutation(async ({ input }) => {
       try {
-        // TODO: Implement with actual database
+        await prisma.user_conversation_continuity.deleteMany({
+          where: {
+            user_id: input.p_user_id,
+            conversation_id: input.p_session_group_id
+          }
+        });
+        
         logger.info('Ending session continuity', { input });
         return true;
       } catch (error) {
@@ -68,9 +101,18 @@ export const conversationRouter = t.router({
     }))
     .query(async ({ input }) => {
       try {
-        // TODO: Implement with actual database
-        logger.info('Getting user active sessions', { userId: input.p_user_id });
-        return [];
+        const activeSessions = await prisma.user_conversation_continuity.findMany({
+          where: {
+            user_id: input.p_user_id,
+            is_resuming: true
+          },
+          include: {
+            conversation: true
+          }
+        });
+        
+        logger.info('Getting user active sessions', { userId: input.p_user_id, count: activeSessions.length });
+        return activeSessions;
       } catch (error) {
         logger.error('Error fetching user active sessions', { userId: input.p_user_id, error });
         throw new Error('Failed to fetch user active sessions');
@@ -80,9 +122,19 @@ export const conversationRouter = t.router({
   cleanupStaleSessionContinuity: t.procedure
     .mutation(async () => {
       try {
-        // TODO: Implement with actual database
-        logger.info('Cleaning up stale session continuity');
-        return 0;
+        const staleDate = new Date();
+        staleDate.setHours(staleDate.getHours() - 24); // 24 hours ago
+        
+        const result = await prisma.user_conversation_continuity.deleteMany({
+          where: {
+            last_timestamp: {
+              lt: staleDate
+            }
+          }
+        });
+        
+        logger.info('Cleaning up stale session continuity', { deleted: result.count });
+        return result.count;
       } catch (error) {
         logger.error('Error cleaning up stale session continuity', { error });
         throw new Error('Failed to cleanup stale session continuity');
@@ -102,7 +154,7 @@ export const conversationRouter = t.router({
       try {
         logger.info('Creating session', { input });
         
-        const session = await prisma.conversation_messages.create({
+        const session = await prisma.user_conversation_messages.create({
           data: {
             user_id: input.user_id,
             conversation_id: input.session_group_id || null,
@@ -128,7 +180,7 @@ export const conversationRouter = t.router({
       try {
         logger.info('Getting sessions', { input });
         
-        const sessions = await prisma.conversation_messages.findMany({
+        const sessions = await prisma.user_conversation_messages.findMany({
           where: {
             user_id: input.user_id
           },
@@ -154,7 +206,7 @@ export const conversationRouter = t.router({
       try {
         logger.info('Getting session', { input });
         
-        const session = await prisma.conversation_messages.findUnique({
+        const session = await prisma.user_conversation_messages.findUnique({
           where: {
             id: input.session_id
           },
@@ -180,7 +232,7 @@ export const conversationRouter = t.router({
       try {
         logger.info('Updating session', { input });
         
-        const session = await prisma.conversation_messages.update({
+        const session = await prisma.user_conversation_messages.update({
           where: {
             id: input.session_id
           },
@@ -203,21 +255,51 @@ export const conversationRouter = t.router({
       try {
         logger.info('Deleting session', { input });
         
-        await prisma.conversation_messages.delete({
+        await prisma.user_conversation_messages.delete({
           where: {
             id: input.session_id
           }
         });
         
         logger.info('Deleted session', { id: input.session_id });
-        return { success: true };
+        return true;
       } catch (error) {
         logger.error('Error deleting session', { input, error });
         throw new Error('Failed to delete session');
       }
     }),
 
-  // Session groups procedures
+  // Conversation management procedures
+  createConversation: protectedProcedure
+    .input(z.object({
+      user_id: z.string(),
+      title: z.string().optional(),
+      context_summary: z.string().optional(),
+      mood_at_start: z.number().optional(),
+      metadata: z.any().optional()
+    }))
+    .mutation(async ({ input }) => {
+      try {
+        logger.info('Creating conversation', { input });
+        
+        const conversation = await prisma.user_conversations.create({
+          data: {
+            user_id: input.user_id,
+            title: input.title ?? null,
+            context_summary: input.context_summary ?? null,
+            mood_at_start: input.mood_at_start ?? null,
+            context_json: input.metadata || {}
+          }
+        });
+        
+        logger.info('Created conversation', { id: conversation.id });
+        return conversation;
+      } catch (error) {
+        logger.error('Error creating conversation', { input, error });
+        throw new Error('Failed to create conversation');
+      }
+    }),
+
   createSessionGroup: protectedProcedure
     .input(z.object({
       user_id: z.string(),
@@ -225,23 +307,16 @@ export const conversationRouter = t.router({
       description: z.string().optional(),
       metadata: z.any().optional()
     }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       try {
-        logger.info('Creating session group', { input, userId: ctx.user?.id });
+        logger.info('Creating session group', { input });
         
-        // Verify the user is creating their own session group
-        if (ctx.user?.id !== input.user_id) {
-          throw new Error('Unauthorized access to create session group');
-        }
-        
-        const sessionGroup = await prisma.conversations.create({
+        const sessionGroup = await prisma.user_conversations.create({
           data: {
             user_id: input.user_id,
-            title: input.title || null,
-            description: input.description || null,
-            context_json: input.metadata || null,
-            created_at: new Date(),
-            started_at: new Date()
+            title: input.title || 'New Session',
+            description: input.description ?? null,
+            context_json: input.metadata || {}
           }
         });
         
@@ -253,84 +328,41 @@ export const conversationRouter = t.router({
       }
     }),
 
-  getConversations: protectedProcedure
+  getConversations: t.procedure
     .input(z.object({
-      user_id: z.string()
+      user_id: z.string(),
+      limit: z.number().optional()
     }))
-    .query(async ({ input, ctx }) => {
+    .query(async ({ input }) => {
       try {
-        logger.info('Getting conversations', { input, userId: ctx.user?.id });
+        logger.info('Getting conversations', { input });
         
-        // Verify the user is requesting their own conversations
-        if (ctx.user?.id !== input.user_id) {
-          throw new Error('Unauthorized access to conversations');
-        }
-        
-        const conversations = await prisma.conversations.findMany({
+        const conversations = await prisma.user_conversations.findMany({
           where: {
             user_id: input.user_id
           },
           orderBy: {
-            created_at: 'desc'
+            started_at: 'desc'
           },
+          take: input.limit || 50,
           include: {
-            conversation_messages: {
+            user_conversation_messages: {
               orderBy: {
-                created_at: 'desc'
-              },
-              take: 5 // Limit to recent messages for performance
+                created_at: 'asc'
+              }
             }
           }
         });
         
         logger.info('Retrieved conversations', { count: conversations.length });
         return conversations;
-      } catch (error: any) {
+      } catch (error) {
         logger.error('Error fetching conversations', { input, error });
-        
-        // Check if it's a prepared statement error
-        if (error?.message?.includes('prepared statement') && error?.message?.includes('already exists')) {
-          logger.error('Prepared statement error in getConversations, attempting to reconnect...');
-          
-          try {
-            // Only reset connection if we have persistent errors
-            console.log('🔄 Attempting retry with connection reset...');
-            await forceConnectionReset();
-            
-            // Wait a bit before retrying
-            await new Promise(resolve => setTimeout(resolve, 200));
-            
-            // Retry the operation
-            const conversations = await prisma.conversations.findMany({
-              where: {
-                user_id: input.user_id
-              },
-              orderBy: {
-                created_at: 'desc'
-              },
-              include: {
-                conversation_messages: {
-                  orderBy: {
-                    created_at: 'desc'
-                  },
-                  take: 5 // Limit to recent messages for performance
-                }
-              }
-            });
-            
-            logger.info('Retrieved conversations after retry', { count: conversations.length });
-            return conversations;
-          } catch (retryError) {
-            logger.error('Retry failed for getConversations', { retryError });
-            throw new Error('Failed to fetch conversations after retry');
-          }
-        }
-        
         throw new Error('Failed to fetch conversations');
       }
     }),
 
-  getConversation: protectedProcedure
+  getConversation: t.procedure
     .input(z.object({
       conversation_id: z.string()
     }))
@@ -338,13 +370,20 @@ export const conversationRouter = t.router({
       try {
         logger.info('Getting conversation', { input });
         
-        const conversation = await prisma.conversations.findUnique({
+        const conversation = await prisma.user_conversations.findUnique({
           where: {
             id: input.conversation_id
+          },
+          include: {
+            user_conversation_messages: {
+              orderBy: {
+                created_at: 'asc'
+              }
+            }
           }
         });
         
-        logger.info('Retrieved conversation', { id: conversation?.id });
+        logger.info('Retrieved conversation', { found: !!conversation });
         return conversation;
       } catch (error) {
         logger.error('Error fetching conversation', { input, error });
@@ -352,32 +391,7 @@ export const conversationRouter = t.router({
       }
     }),
 
-  getConversationMessages: protectedProcedure
-    .input(z.object({
-      conversation_id: z.string()
-    }))
-    .query(async ({ input }) => {
-      try {
-        logger.info('Getting conversation messages', { input });
-        
-        const messages = await prisma.conversation_messages.findMany({
-          where: {
-            conversation_id: input.conversation_id
-          },
-          orderBy: {
-            created_at: 'asc'
-          }
-        });
-        
-        logger.info('Retrieved conversation messages', { count: messages.length });
-        return messages;
-      } catch (error) {
-        logger.error('Error fetching conversation messages', { input, error });
-        throw new Error('Failed to fetch conversation messages');
-      }
-    }),
-
-  updateConversation: protectedProcedure
+  updateConversation: t.procedure
     .input(z.object({
       conversation_id: z.string(),
       updates: z.any()
@@ -386,7 +400,7 @@ export const conversationRouter = t.router({
       try {
         logger.info('Updating conversation', { input });
         
-        const conversation = await prisma.conversations.update({
+        const conversation = await prisma.user_conversations.update({
           where: {
             id: input.conversation_id
           },
@@ -401,6 +415,35 @@ export const conversationRouter = t.router({
       }
     }),
 
+  endConversation: t.procedure
+    .input(z.object({
+      conversation_id: z.string(),
+      mood_at_end: z.number().optional()
+    }))
+    .mutation(async ({ input }) => {
+      try {
+        logger.info('Ending conversation', { input });
+        
+        const conversation = await prisma.user_conversations.update({
+          where: {
+            id: input.conversation_id
+          },
+          data: {
+            ended_at: new Date(),
+            mood_at_end: input.mood_at_end ?? null
+          }
+        });
+        
+        logger.info('Ended conversation', { id: conversation.id });
+        return conversation;
+      } catch (error) {
+        logger.error('Error ending conversation', { input, error });
+        throw new Error('Failed to end conversation');
+      }
+    }),
+
+  // Message management procedures
+  // Alias to support existing mobile client path
   createConversationMessage: protectedProcedure
     .input(z.object({
       user_id: z.string(),
@@ -409,122 +452,215 @@ export const conversationRouter = t.router({
       initial_message: z.string().optional(),
       metadata: z.any().optional()
     }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       try {
-        logger.info('Creating conversation message', { input, userId: ctx.user?.id });
-        
-        // Verify the user is creating their own message
-        if (ctx.user?.id !== input.user_id) {
-          throw new Error('Unauthorized access to create conversation message');
-        }
-        
-        const message = await prisma.conversation_messages.create({
+        logger.info('Creating conversation message (alias)', { input });
+        const message = await prisma.user_conversation_messages.create({
           data: {
             user_id: input.user_id,
-            conversation_id: input.conversation_id || null,
-            input_transcript: input.initial_message || null,
-            tags: input.metadata?.tags || []
+            conversation_id: input.conversation_id ?? null,
+            input_transcript: input.initial_message ?? null,
+            gpt_response: input.metadata?.gpt_response ?? null,
+            tags: input.metadata?.tags ?? [],
+            summary: input.metadata?.summary ?? null,
           }
         });
-        
-        logger.info('Created conversation message', { id: message.id });
+        logger.info('Created conversation message (alias)', { id: message.id });
         return message;
       } catch (error) {
-        logger.error('Error creating conversation message', { input, error });
+        logger.error('Error creating conversation message (alias)', { input, error });
         throw new Error('Failed to create conversation message');
       }
     }),
-
-  getConversationMessage: protectedProcedure
+  addMessage: protectedProcedure
     .input(z.object({
-      message_id: z.string()
+      user_id: z.string(),
+      conversation_id: z.string().optional(),
+      input_type: z.string().optional(),
+      input_transcript: z.string().optional(),
+      gpt_response: z.string().optional(),
+      audio_response_url: z.string().optional(),
+      summary: z.string().optional(),
+      mood_at_time: z.number().optional(),
+      tags: z.array(z.string()).optional()
     }))
-    .query(async ({ input }) => {
+    .mutation(async ({ input }) => {
       try {
-        logger.info('Getting conversation message', { input });
+        logger.info('Adding message', { input });
         
-        const message = await prisma.conversation_messages.findUnique({
-          where: {
-            id: input.message_id
-          },
-          include: {
-            conversation: true
+        const message = await prisma.user_conversation_messages.create({
+          data: {
+            user_id: input.user_id,
+            conversation_id: input.conversation_id ?? null,
+            input_type: input.input_type ?? null,
+            input_transcript: input.input_transcript ?? null,
+            gpt_response: input.gpt_response ?? null,
+            audio_response_url: input.audio_response_url ?? null,
+            summary: input.summary ?? null,
+            mood_at_time: input.mood_at_time ?? null,
+            tags: input.tags || []
           }
         });
         
-        logger.info('Retrieved conversation message', { found: !!message });
+        logger.info('Added message', { id: message.id });
         return message;
       } catch (error) {
-        logger.error('Error fetching conversation message', { input, error });
-        throw new Error('Failed to fetch conversation message');
+        logger.error('Error adding message', { input, error });
+        throw new Error('Failed to add message');
       }
     }),
 
-  updateConversationMessage: protectedProcedure
+  getMessages: t.procedure
+    .input(z.object({
+      conversation_id: z.string(),
+      limit: z.number().optional()
+    }))
+    .query(async ({ input }) => {
+      try {
+        logger.info('Getting messages', { input });
+        
+        const messages = await prisma.user_conversation_messages.findMany({
+          where: {
+            conversation_id: input.conversation_id
+          },
+          orderBy: {
+            created_at: 'asc'
+          },
+          take: input.limit || 100
+        });
+        
+        logger.info('Retrieved messages', { count: messages.length });
+        return messages;
+      } catch (error) {
+        logger.error('Error fetching messages', { input, error });
+        throw new Error('Failed to fetch messages');
+      }
+    }),
+
+  // Alias to support existing mobile client path
+  getConversationMessages: t.procedure
+    .input(z.object({
+      conversation_id: z.string(),
+      limit: z.number().optional()
+    }))
+    .query(async ({ input }) => {
+      try {
+        logger.info('Getting messages (alias)', { input });
+        const messages = await prisma.user_conversation_messages.findMany({
+          where: { conversation_id: input.conversation_id },
+          orderBy: { created_at: 'asc' },
+          take: input.limit || 100,
+        });
+        logger.info('Retrieved messages (alias)', { count: messages.length });
+        return messages;
+      } catch (error) {
+        logger.error('Error fetching messages (alias)', { input, error });
+        throw new Error('Failed to fetch messages');
+      }
+    }),
+
+  flagMessage: t.procedure
     .input(z.object({
       message_id: z.string(),
-      updates: z.any()
+      flagged: z.boolean()
     }))
     .mutation(async ({ input }) => {
       try {
-        logger.info('Updating conversation message', { input });
+        logger.info('Flagging message', { input });
         
-        const message = await prisma.conversation_messages.update({
+        const message = await prisma.user_conversation_messages.update({
           where: {
             id: input.message_id
           },
-          data: input.updates
-        });
-        
-        logger.info('Updated conversation message', { id: message.id });
-        return message;
-      } catch (error) {
-        logger.error('Error updating conversation message', { input, error });
-        throw new Error('Failed to update conversation message');
-      }
-    }),
-
-  deleteConversationMessage: protectedProcedure
-    .input(z.object({
-      message_id: z.string()
-    }))
-    .mutation(async ({ input }) => {
-      try {
-        logger.info('Deleting conversation message', { input });
-        
-        await prisma.conversation_messages.delete({
-          where: {
-            id: input.message_id
+          data: {
+            flagged: input.flagged
           }
         });
         
-        logger.info('Deleted conversation message', { id: input.message_id });
-        return { success: true };
+        logger.info('Flagged message', { id: message.id, flagged: message.flagged });
+        return message;
       } catch (error) {
-        logger.error('Error deleting conversation message', { input, error });
-        throw new Error('Failed to delete conversation message');
+        logger.error('Error flagging message', { input, error });
+        throw new Error('Failed to flag message');
       }
     }),
 
-  // Session analytics
-  getSessionAnalytics: t.procedure
+  // Crisis management procedures
+  createCrisisFlag: protectedProcedure
     .input(z.object({
-      user_id: z.string()
+      user_id: z.string(),
+      session_id: z.string().optional(),
+      flag_type: z.string()
+    }))
+    .mutation(async ({ input }) => {
+      try {
+        logger.info('Creating crisis flag', { input });
+        
+        const crisisFlag = await prisma.user_crisis_flags.create({
+          data: {
+            user_id: input.user_id,
+            session_id: input.session_id ?? null,
+            flag_type: input.flag_type
+          }
+        });
+        
+        logger.info('Created crisis flag', { id: crisisFlag.id });
+        return crisisFlag;
+      } catch (error) {
+        logger.error('Error creating crisis flag', { input, error });
+        throw new Error('Failed to create crisis flag');
+      }
+    }),
+
+  getCrisisFlags: t.procedure
+    .input(z.object({
+      user_id: z.string(),
+      reviewed: z.boolean().optional()
     }))
     .query(async ({ input }) => {
       try {
-        // TODO: Implement with actual database
-        logger.info('Getting session analytics', { input });
-        return {
-          total_sessions: 0,
-          total_duration: 0,
-          average_session_length: 0,
-          sessions_this_week: 0,
-          sessions_this_month: 0
-        };
+        logger.info('Getting crisis flags', { input });
+        
+        const crisisFlags = await prisma.user_crisis_flags.findMany({
+          where: {
+            user_id: input.user_id,
+            ...(input.reviewed !== undefined && { reviewed: input.reviewed })
+          },
+          orderBy: {
+            triggered_at: 'desc'
+          }
+        });
+        
+        logger.info('Retrieved crisis flags', { count: crisisFlags.length });
+        return crisisFlags;
       } catch (error) {
-        logger.error('Error fetching session analytics', { input, error });
-        throw new Error('Failed to fetch session analytics');
+        logger.error('Error fetching crisis flags', { input, error });
+        throw new Error('Failed to fetch crisis flags');
       }
     }),
+
+  markCrisisFlagReviewed: t.procedure
+    .input(z.object({
+      flag_id: z.string()
+    }))
+    .mutation(async ({ input }) => {
+      try {
+        logger.info('Marking crisis flag as reviewed', { input });
+        
+        const crisisFlag = await prisma.user_crisis_flags.update({
+          where: {
+            id: input.flag_id
+          },
+          data: {
+            reviewed: true
+          }
+        });
+        
+        logger.info('Marked crisis flag as reviewed', { id: crisisFlag.id });
+        return crisisFlag;
+      } catch (error) {
+        logger.error('Error marking crisis flag as reviewed', { input, error });
+        throw new Error('Failed to mark crisis flag as reviewed');
+      }
+    })
 }); 

@@ -7,6 +7,7 @@ import { StyledButton } from '../components/ui/StyledButton';
 import { StyledInput } from '../components/ui/StyledInput';
 import { Toast } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
+import { trpcClient } from '../lib/trpcClient';
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -104,14 +105,38 @@ export default function RegisterScreen() {
       const result = await signup(email, password, name.trim());
 
       if (result.success) {
-        console.log('✅ Signup successful, redirecting to conversation');
+        console.log('✅ Signup successful, checking onboarding status');
         setToast({
           visible: true,
           message: 'Account created successfully!',
           type: 'success',
         });
-        // Redirect to conversation page on successful signup
-        router.replace('/conversation' as any);
+        
+        // Check if user should see onboarding
+        try {
+          if (result.user?.id) {
+            // Add a small delay to ensure JWT token is stored
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            const onboardingStatus = await trpcClient.checkOnboardingStatus(result.user.id);
+            console.log('📋 Onboarding status:', onboardingStatus);
+            
+            if (onboardingStatus.shouldShowOnboarding) {
+              console.log('🚀 Redirecting to onboarding wizard');
+              router.replace('/onboarding/step1' as any);
+            } else {
+              console.log('✅ User has completed or skipped onboarding, redirecting to conversation');
+              router.replace('/conversation' as any);
+            }
+          } else {
+            console.log('⚠️ No user ID in signup result, redirecting to conversation');
+            router.replace('/conversation' as any);
+          }
+        } catch (onboardingError) {
+          console.error('❌ Error checking onboarding status:', onboardingError);
+          // Fallback to conversation if onboarding check fails
+          router.replace('/conversation' as any);
+        }
       } else {
         console.log('⚠️ Signup failed:', result.error);
         setToast({

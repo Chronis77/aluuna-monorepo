@@ -3,7 +3,7 @@
 
 import { trpc } from '../api/client.js'; // Adjust import path as needed
 
-export class MemoryProfileClient {
+export class UserProfileClient {
   private userId: string;
 
   constructor(userId: string) {
@@ -171,7 +171,7 @@ export class MemoryProfileClient {
 
 // Usage examples:
 /*
-const client = new MemoryProfileClient('user-123');
+const client = new UserProfileClient('user-123');
 
 // Get profile
 const profile = await client.getProfile();

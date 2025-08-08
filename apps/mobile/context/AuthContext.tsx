@@ -22,8 +22,9 @@ interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
-  signup: (email: string, password: string, name?: string) => Promise<{ success: boolean; error?: string }>;
+  signup: (email: string, password: string, name?: string) => Promise<{ success: boolean; error?: string; user?: User }>;
   refreshAuth: () => Promise<boolean>;
+  authLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -179,7 +180,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const signup = async (email: string, password: string, name?: string): Promise<{ success: boolean; error?: string }> => {
+  const signup = async (email: string, password: string, name?: string): Promise<{ success: boolean; error?: string; user?: User }> => {
     try {
       console.log('🔐 Signup attempt:', email);
       const response = await apiCall('/api/auth/signup', {
@@ -193,7 +194,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           refreshToken: response.data.refreshToken,
         });
         console.log('✅ Signup successful, session stored');
-        return { success: true };
+        return { success: true, user: response.data.user };
       } else {
         console.error('❌ Signup failed:', response.error);
         return { success: false, error: response.error || 'Signup failed' };
@@ -262,7 +263,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         login, 
         logout, 
         signup, 
-        refreshAuth 
+        refreshAuth,
+        authLoading: isLoading,
       }}
     >
       {children}

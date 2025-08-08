@@ -5,12 +5,44 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 class TRPCClient {
   private baseUrl: string;
   private apiKey: string;
+  
+  private sanitizeForLogging(input: any) {
+    const MAX_INLINE = 200;
+    const redactKeys = ['audio_base64', 'file', 'blob', 'binary', 'data'];
+    const seen = new WeakSet();
+    const replacer = (key: string, value: any) => {
+      if (value && typeof value === 'object') {
+        if (seen.has(value)) return undefined;
+        seen.add(value);
+      }
+      if (typeof value === 'string') {
+        const lowerKey = key.toLowerCase();
+        if (redactKeys.some(k => lowerKey.includes(k)) || value.length > MAX_INLINE) {
+          return `<redacted:${value.length} chars>`;
+        }
+      }
+      return value;
+    };
+    try {
+      return JSON.parse(JSON.stringify(input, replacer));
+    } catch {
+      return '<redacted>';
+    }
+  }
 
   constructor() {
     this.baseUrl = config.server.url;
     this.apiKey = config.server.apiKey;
     console.log(`🔧 tRPC Client initialized with URL: ${this.baseUrl}`);
     console.log(`🔑 API Key configured: ${this.apiKey ? 'Yes' : 'No'}`);
+  }
+
+  private getTimeoutMsForProcedure(procedure: string): number {
+    if (procedure === 'voice.transcribeFromUrl') return 120_000; // 120s for long transcriptions
+    if (procedure === 'voice.transcribeQuick') return 45_000;    // 45s for short clips
+    if (procedure === 'voice.createJob') return 15_000;
+    if (procedure === 'voice.getJobStatus') return 10_000;
+    return 10_000; // default
   }
 
   // Test connection to server
@@ -59,16 +91,21 @@ class TRPCClient {
   private async request(procedure: string, input: any) {
     try {
       console.log(`🔗 Making tRPC request to: ${this.baseUrl}/api/trpc/${procedure}`);
-      console.log(`📤 Request input:`, input);
+      console.log(`📤 Request input:`, this.sanitizeForLogging(input));
       console.log(`🔑 Using API key: ${this.apiKey ? 'Configured' : 'Missing'}`);
       
       // Get JWT token from AsyncStorage
       const token = await AsyncStorage.getItem('authToken');
       console.log(`🔐 JWT token available: ${token ? 'Yes' : 'No'}`);
+      if (token) {
+        console.log(`🔐 JWT token length: ${token.length}`);
+        console.log(`🔐 JWT token preview: ${token.substring(0, 20)}...`);
+      }
       
-      // Create AbortController for timeout
+      // Create AbortController for timeout (longer for voice procedures)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutMs = this.getTimeoutMsForProcedure(procedure);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -131,8 +168,318 @@ class TRPCClient {
     return this.request('memory.getMemoryProfile', { userId });
   }
 
-  async upsertMemoryProfile(data: any) {
-    return this.request('memory.upsertMemoryProfile', data);
+  // Individual memory item procedures
+  async addTheme(data: {
+    user_id: string;
+    theme_name: string;
+    theme_category?: string;
+    importance_level?: number;
+  }) {
+    return this.request('memory.addTheme', {
+      userId: data.user_id,
+      themeName: data.theme_name,
+      themeCategory: data.theme_category,
+      importanceLevel: data.importance_level
+    });
+  }
+
+  async addGoal(data: {
+    user_id: string;
+    goal_title: string;
+    goal_description?: string;
+    goal_category?: string;
+    priority_level?: number;
+  }) {
+    return this.request('memory.addGoal', {
+      userId: data.user_id,
+      goalTitle: data.goal_title,
+      goalDescription: data.goal_description,
+      goalCategory: data.goal_category,
+      priorityLevel: data.priority_level
+    });
+  }
+
+  async addCopingTool(data: {
+    user_id: string;
+    tool_name: string;
+    tool_category?: string;
+    effectiveness_rating?: number;
+    description?: string;
+    when_to_use?: string;
+  }) {
+    return this.request('memory.addCopingTool', {
+      userId: data.user_id,
+      toolName: data.tool_name,
+      toolCategory: data.tool_category,
+      effectivenessRating: data.effectiveness_rating,
+      description: data.description,
+      whenToUse: data.when_to_use
+    });
+  }
+
+  async addStrength(data: {
+    user_id: string;
+    strength_name: string;
+    strength_category?: string;
+    confidence_level?: number;
+    how_developed?: string;
+    how_utilized?: string;
+  }) {
+    return this.request('memory.addStrength', {
+      userId: data.user_id,
+      strengthName: data.strength_name,
+      strengthCategory: data.strength_category,
+      confidenceLevel: data.confidence_level,
+      howDeveloped: data.how_developed,
+      howUtilized: data.how_utilized
+    });
+  }
+
+  // New methods for comprehensive onboarding data storage
+  async addRelationshipStatus(data: {
+    user_id: string;
+    current_status: string;
+    partner_name?: string;
+    relationship_duration?: string;
+    satisfaction_level?: number;
+    challenges?: string[];
+    strengths?: string[];
+  }) {
+    return this.request('memory.addRelationshipStatus', {
+      userId: data.user_id,
+      currentStatus: data.current_status,
+      partnerName: data.partner_name,
+      relationshipDuration: data.relationship_duration,
+      satisfactionLevel: data.satisfaction_level,
+      challenges: data.challenges,
+      strengths: data.strengths
+    });
+  }
+
+  async addLivingSituation(data: {
+    user_id: string;
+    living_arrangement: string;
+    location?: string;
+    housemates?: string[];
+    financial_stability?: string;
+    housing_satisfaction?: number;
+  }) {
+    return this.request('memory.addLivingSituation', {
+      userId: data.user_id,
+      livingArrangement: data.living_arrangement,
+      location: data.location,
+      housemates: data.housemates,
+      financialStability: data.financial_stability,
+      housingSatisfaction: data.housing_satisfaction
+    });
+  }
+
+  async addSupportSystem(data: {
+    user_id: string;
+    person_name: string;
+    relationship_type?: string;
+    support_type?: string[];
+    reliability_level?: number;
+    contact_info?: string;
+  }) {
+    return this.request('memory.addSupportSystem', {
+      userId: data.user_id,
+      personName: data.person_name,
+      relationshipType: data.relationship_type,
+      supportType: data.support_type,
+      reliabilityLevel: data.reliability_level,
+      contactInfo: data.contact_info
+    });
+  }
+
+  async addCurrentStressor(data: {
+    user_id: string;
+    stressor_name: string;
+    stressor_type?: string;
+    impact_level?: number;
+    duration?: string;
+    coping_strategies?: string[];
+  }) {
+    return this.request('memory.addCurrentStressor', {
+      userId: data.user_id,
+      stressorName: data.stressor_name,
+      stressorType: data.stressor_type,
+      impactLevel: data.impact_level,
+      duration: data.duration,
+      copingStrategies: data.coping_strategies
+    });
+  }
+
+  async addDailyHabit(data: {
+    user_id: string;
+    habit_name: string;
+    habit_category?: string;
+    frequency?: string;
+    consistency_level?: number;
+    impact_on_wellbeing?: string;
+  }) {
+    return this.request('memory.addDailyHabit', {
+      userId: data.user_id,
+      habitName: data.habit_name,
+      habitCategory: data.habit_category,
+      frequency: data.frequency,
+      consistencyLevel: data.consistency_level,
+      impactOnWellbeing: data.impact_on_wellbeing
+    });
+  }
+
+  async addSubstanceUse(data: {
+    user_id: string;
+    substance_name: string;
+    usage_pattern?: string;
+    frequency?: string;
+    impact_level?: number;
+    triggers?: string[];
+    harm_reduction_strategies?: string[];
+  }) {
+    return this.request('memory.addSubstanceUse', {
+      userId: data.user_id,
+      substanceName: data.substance_name,
+      usagePattern: data.usage_pattern,
+      frequency: data.frequency,
+      impactLevel: data.impact_level,
+      triggers: data.triggers,
+      harmReductionStrategies: data.harm_reduction_strategies
+    });
+  }
+
+  async addSleepRoutine(data: {
+    user_id: string;
+    bedtime?: string;
+    wake_time?: string;
+    sleep_duration_hours?: number;
+    sleep_quality_rating?: number;
+    sleep_hygiene_practices?: string[];
+    sleep_issues?: string[];
+  }) {
+    return this.request('memory.addSleepRoutine', {
+      userId: data.user_id,
+      bedtime: data.bedtime,
+      wakeTime: data.wake_time,
+      sleepDurationHours: data.sleep_duration_hours,
+      sleepQualityRating: data.sleep_quality_rating,
+      sleepHygienePractices: data.sleep_hygiene_practices,
+      sleepIssues: data.sleep_issues
+    });
+  }
+
+  async addPreviousTherapy(data: {
+    user_id: string;
+    therapy_type: string;
+    therapist_name?: string;
+    duration?: string;
+    effectiveness_rating?: number;
+    key_insights?: string;
+    termination_reason?: string;
+  }) {
+    return this.request('memory.addPreviousTherapy', {
+      userId: data.user_id,
+      therapyType: data.therapy_type,
+      therapistName: data.therapist_name,
+      duration: data.duration,
+      effectivenessRating: data.effectiveness_rating,
+      keyInsights: data.key_insights,
+      terminationReason: data.termination_reason
+    });
+  }
+
+  async addTherapyPreferences(data: {
+    user_id: string;
+    preferred_therapy_styles?: string[];
+    preferred_tone?: string;
+    communication_style?: string;
+    feedback_frequency?: string;
+    session_length_preference?: number;
+  }) {
+    return this.request('memory.addTherapyPreferences', {
+      userId: data.user_id,
+      preferredTherapyStyles: data.preferred_therapy_styles,
+      preferredTone: data.preferred_tone,
+      communicationStyle: data.communication_style,
+      feedbackFrequency: data.feedback_frequency,
+      sessionLengthPreference: data.session_length_preference
+    });
+  }
+
+  async addProfileSummary(data: {
+    user_id: string;
+    spiritual_connection_level?: number;
+    personal_agency_level?: number;
+    boundaries_awareness?: number;
+    self_development_capacity?: number;
+    hard_truths_tolerance?: number;
+    awareness_level?: number;
+    suicidal_risk_level?: number; // 0-4: Never=0, Rarely=1, Sometimes=2, Often=3, Currently=4
+    sleep_quality?: string;
+    mood_score_initial?: number;
+    biggest_challenge?: string;
+    biggest_obstacle?: string;
+    motivation_for_joining?: string;
+    hopes_to_achieve?: string;
+  }) {
+    return this.request('memory.addProfileSummary', {
+      userId: data.user_id,
+      spiritualConnectionLevel: data.spiritual_connection_level,
+      personalAgencyLevel: data.personal_agency_level,
+      boundariesAwareness: data.boundaries_awareness,
+      selfDevelopmentCapacity: data.self_development_capacity,
+      hardTruthsTolerance: data.hard_truths_tolerance,
+      awarenessLevel: data.awareness_level,
+      suicidalRiskLevel: data.suicidal_risk_level,
+      sleepQuality: data.sleep_quality,
+      moodScoreInitial: data.mood_score_initial,
+      biggestChallenge: data.biggest_challenge,
+      biggestObstacle: data.biggest_obstacle,
+      motivationForJoining: data.motivation_for_joining,
+      hopesToAchieve: data.hopes_to_achieve
+    });
+  }
+
+  async addEmotionalState(data: {
+    user_id: string;
+    state_name: string;
+    state_description?: string;
+    physical_sensations?: string[];
+    thoughts_patterns?: string[];
+    behaviors?: string[];
+    intensity_level?: number;
+  }) {
+    return this.request('memory.addEmotionalState', {
+      userId: data.user_id,
+      stateName: data.state_name,
+      stateDescription: data.state_description,
+      physicalSensations: data.physical_sensations,
+      thoughtsPatterns: data.thoughts_patterns,
+      behaviors: data.behaviors,
+      intensityLevel: data.intensity_level
+    });
+  }
+
+  async addSuicidalThought(data: {
+    user_id: string;
+    thought_date: string;
+    thought_content?: string;
+    intensity_level?: number;
+    risk_level?: number;
+    protective_factors?: string[];
+    safety_plan_activated?: boolean;
+    professional_help_sought?: boolean;
+  }) {
+    return this.request('memory.addSuicidalThought', {
+      userId: data.user_id,
+      thoughtDate: data.thought_date,
+      thoughtContent: data.thought_content,
+      intensityLevel: data.intensity_level,
+      riskLevel: data.risk_level,
+      protectiveFactors: data.protective_factors,
+      safetyPlanActivated: data.safety_plan_activated,
+      professionalHelpSought: data.professional_help_sought
+    });
   }
 
   // Mantras
@@ -226,9 +573,7 @@ class TRPCClient {
     return this.request('memory.deleteCopingTool', { userId, index });
   }
 
-  async addCopingTool(userId: string, content: string) {
-    return this.request('memory.addCopingTool', { userId, content });
-  }
+
 
   // Shadow Themes
   async updateShadowTheme(userId: string, index: number, content: string) {
@@ -295,6 +640,25 @@ class TRPCClient {
 
   async deleteOnboardingProgress(userId: string) {
     return this.request('onboarding.deleteOnboardingProgress', { user_id: userId });
+  }
+
+  async checkOnboardingStatus(userId: string) {
+    return this.request('onboarding.checkOnboardingStatus', { user_id: userId });
+  }
+
+  async markOnboardingSkipped(userId: string) {
+    return this.request('onboarding.markOnboardingSkipped', { user_id: userId });
+  }
+
+  async markOnboardingCompleted(userId: string, completedAt?: string) {
+    return this.request('onboarding.markOnboardingCompleted', { user_id: userId, completed_at: completedAt });
+  }
+
+  async finalizeOnboarding(userId: string, onboardingData: any) {
+    return this.request('onboarding.finalizeOnboarding', {
+      user_id: userId,
+      onboarding_data: onboardingData,
+    });
   }
 
   // Value compass procedures
@@ -498,6 +862,16 @@ class TRPCClient {
     });
   }
 
+  async createFeedbackAnalyzed(userId: string, feedbackText: string, sessionId?: string, deviceInfo?: any, appVersion?: string) {
+    return this.request('feedback.createFeedbackAnalyzed', {
+      user_id: userId,
+      feedback_text: feedbackText,
+      session_id: sessionId,
+      device_info: deviceInfo,
+      app_version: appVersion,
+    });
+  }
+
   // Crisis flags procedures
   async getCrisisFlags(userId: string) {
     return this.request('feedback.getCrisisFlags', { user_id: userId });
@@ -511,6 +885,48 @@ class TRPCClient {
   // Health check
   async health() {
     return this.request('health', {});
+  }
+
+  // Voice procedures
+  async voiceTranscribeQuick(userId: string, audioBase64: string, mimeType?: string, model?: string) {
+    return this.request('voice.transcribeQuick', {
+      user_id: userId,
+      audio_base64: audioBase64,
+      mime_type: mimeType,
+      model,
+    });
+  }
+
+  async voiceGetPresignedUpload(userId: string, fileName?: string, contentType?: string, maxMb?: number) {
+    return this.request('voice.getPresignedUpload', {
+      user_id: userId,
+      file_name: fileName,
+      content_type: contentType,
+      max_mb: maxMb,
+    });
+  }
+
+  async voiceCreateJob(userId: string, audioUrl: string, options?: { language?: string; model?: string; conversation_id?: string }) {
+    return this.request('voice.createJob', {
+      user_id: userId,
+      audio_url: audioUrl,
+      language: options?.language,
+      model: options?.model,
+      conversation_id: options?.conversation_id,
+    });
+  }
+
+  async voiceGetJobStatus(jobId: string) {
+    return this.request('voice.getJobStatus', { job_id: jobId });
+  }
+
+  async voiceTranscribeFromUrl(userId: string, audioUrl: string, mimeType?: string, model?: string) {
+    return this.request('voice.transcribeFromUrl', {
+      user_id: userId,
+      audio_url: audioUrl,
+      mime_type: mimeType,
+      model,
+    });
   }
 }
 

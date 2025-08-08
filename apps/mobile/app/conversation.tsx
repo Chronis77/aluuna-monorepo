@@ -64,6 +64,7 @@ export default function SessionScreen() {
   const [isSending, setIsSending] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [dialogueMode, setDialogueMode] = useState(false);
+  const [shouldShowOnboarding, setShouldShowOnboarding] = useState(false);
   const [toast, setToast] = useState<{
     visible: boolean;
     message: string;
@@ -297,6 +298,19 @@ export default function SessionScreen() {
       setCurrentUserId(user.id);
       console.log('✅ User authenticated:', user.id);
 
+      // Check onboarding status to enable Resume/Complete Onboarding menu
+      try {
+        const onboardingStatus = await trpcClient.checkOnboardingStatus(user.id);
+        // Show menu item when onboarding_completed_at is null (regardless of skipped flag)
+        const showComplete = onboardingStatus && 'completedAt' in onboardingStatus
+          ? onboardingStatus.completedAt === null
+          : true;
+        setShouldShowOnboarding(showComplete);
+      } catch (e) {
+        console.warn('⚠️ Failed to check onboarding status (menu will be hidden by default):', e);
+        setShouldShowOnboarding(false);
+      }
+
       // Load conversations
       const groups = await ConversationService.getConversations(user.id, session?.token);
       setConversations(groups);
@@ -349,7 +363,7 @@ export default function SessionScreen() {
 
       // Add initial greeting only if this is a completely new conversation with no messages
       const dbSessions = await ConversationService.getConversationMessagesForConversation(currentGroup.id, session?.token);
-      const hasExistingMessages = dbSessions.some(session => 
+      const hasExistingMessages = dbSessions.some((session: any) => 
         session.input_transcript || session.gpt_response
       );
       
@@ -357,7 +371,7 @@ export default function SessionScreen() {
       console.log('- Conversation ID:', currentGroup.id);
       console.log('- Total messages in conversation:', dbSessions.length);
       console.log('- Has existing messages:', hasExistingMessages);
-      console.log('- Messages with content:', dbSessions.filter(s => s.input_transcript || s.gpt_response).length);
+      console.log('- Messages with content:', dbSessions.filter((s: any) => s.input_transcript || s.gpt_response).length);
       
       if (!hasExistingMessages) {
         console.log('✅ New conversation detected, adding greeting message');
@@ -374,7 +388,8 @@ export default function SessionScreen() {
         setMessages(prev => [...prev, greetingMessage]);
         
         // Save greeting to database
-        await ConversationService.addConversationMessage(currentGroup.id, user.id, greeting, greeting);
+        // Store only as AI response (gpt_response), not as user input
+        await ConversationService.addConversationMessage(currentGroup.id, user.id, undefined, greeting);
       } else {
         console.log('✅ Existing conversation with messages, skipping greeting');
         console.log('- Will continue from where user left off');
@@ -400,9 +415,13 @@ export default function SessionScreen() {
       
       const messageList: Message[] = [];
       
-      dbSessions.forEach(session => {
-        // Add user message if it exists
-        if (session.input_transcript) {
+      dbSessions.forEach((session: any) => {
+        const hasUser = !!session.input_transcript;
+        const hasAi = !!session.gpt_response;
+        const isDuplicateGreeting = hasUser && hasAi && String(session.input_transcript).trim() === String(session.gpt_response).trim();
+
+        // Add user message if it exists and is not a duplicate of AI greeting
+        if (hasUser && !isDuplicateGreeting) {
           messageList.push({
             id: `${session.id}-user`,
             text: session.input_transcript,
@@ -412,7 +431,7 @@ export default function SessionScreen() {
         }
         
         // Add AI response if it exists
-        if (session.gpt_response) {
+        if (hasAi) {
           messageList.push({
             id: `${session.id}-ai`,
             text: session.gpt_response,
@@ -474,7 +493,7 @@ export default function SessionScreen() {
       const dbSessions = await ConversationService.getConversationMessagesForConversation(currentConversation.id);
       const conversationHistory: OpenAIMessage[] = [];
       
-      dbSessions.forEach(session => {
+      dbSessions.forEach((session: any) => {
         if (session.input_transcript) {
           conversationHistory.push({ role: 'user' as const, content: session.input_transcript });
         }
@@ -635,7 +654,7 @@ export default function SessionScreen() {
       const dbSessions = await ConversationService.getConversationMessagesForConversation(currentConversation!.id);
       const conversationHistory: OpenAIMessage[] = [];
       
-      dbSessions.forEach(session => {
+      dbSessions.forEach((session: any) => {
         if (session.input_transcript) {
           conversationHistory.push({ role: 'user' as const, content: session.input_transcript });
         }
@@ -701,7 +720,7 @@ export default function SessionScreen() {
       const dbSessions = await ConversationService.getConversationMessagesForConversation(currentConversation.id);
       const conversationHistory: OpenAIMessage[] = [];
       
-      dbSessions.forEach(session => {
+      dbSessions.forEach((session: any) => {
         if (session.input_transcript) {
           conversationHistory.push({ role: 'user' as const, content: session.input_transcript });
         }
@@ -989,6 +1008,16 @@ export default function SessionScreen() {
 
   const toggleSidebar = () => {
     const toValue = isSidebarOpen ? -SIDEBAR_WIDTH : 0;
+    // If opening sidebar, ensure profile menu is closed
+    if (!isSidebarOpen && isProfileMenuOpen) {
+      Animated.spring(profileMenuTranslateX, {
+        toValue: screenWidth,
+        useNativeDriver: true,
+        tension: 100,
+        friction: 8,
+      }).start();
+      setIsProfileMenuOpen(false);
+    }
     Animated.spring(sidebarTranslateX, {
       toValue,
       useNativeDriver: true,
@@ -1000,6 +1029,16 @@ export default function SessionScreen() {
 
   const toggleProfileMenu = () => {
     const toValue = isProfileMenuOpen ? screenWidth : 0;
+    // If opening profile menu, ensure sidebar is closed
+    if (!isProfileMenuOpen && isSidebarOpen) {
+      Animated.spring(sidebarTranslateX, {
+        toValue: -SIDEBAR_WIDTH,
+        useNativeDriver: true,
+        tension: 100,
+        friction: 8,
+      }).start();
+      setIsSidebarOpen(false);
+    }
     Animated.spring(profileMenuTranslateX, {
       toValue,
       useNativeDriver: true,
@@ -1068,12 +1107,42 @@ export default function SessionScreen() {
       router.push('/feedback-history' as any);
     } else if (title === 'Settings') {
       router.push('/settings' as any);
+    } else if (title === 'Complete Onboarding') {
+      // Attempt to resume where the user left off
+      resumeOnboarding();
     } else {
       setToast({
         visible: true,
         message: `${title} feature coming soon!`,
         type: 'info',
       });
+    }
+  };
+
+  const resumeOnboarding = async () => {
+    if (!currentUserId) {
+      router.push('/onboarding/step1' as any);
+      return;
+    }
+    try {
+      const progress = await trpcClient.getOnboardingProgress(currentUserId);
+      const data = progress?.onboarding_data || {};
+      // Determine next step based on completed data
+      const has1 = !!data.step1;
+      const has2 = !!data.step2;
+      const has3 = !!data.step3;
+      const has4 = !!data.step4;
+      const has5 = !!data.step5;
+      let nextStep = 1;
+      if (has1 && !has2) nextStep = 2;
+      else if (has1 && has2 && !has3) nextStep = 3;
+      else if (has1 && has2 && has3 && !has4) nextStep = 4;
+      else if (has1 && has2 && has3 && has4 && !has5) nextStep = 5;
+      else if (has1 && has2 && has3 && has4 && has5) nextStep = 6;
+      router.push(`/onboarding/step${nextStep}` as any);
+    } catch (error) {
+      console.error('Failed to fetch onboarding progress, sending to step1:', error);
+      router.push('/onboarding/step1' as any);
     }
   };
 
@@ -1336,6 +1405,7 @@ export default function SessionScreen() {
             }}
             onLogout={handleLogout}
             onMenuItemPress={handleMenuItemPress}
+            onboardingSkipped={shouldShowOnboarding}
           />
         </Animated.View>
 

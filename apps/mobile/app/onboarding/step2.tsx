@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AluunaLoader } from '../../components/AluunaLoader';
 import { ProgressDots } from '../../components/onboarding/ProgressDots';
 import { ErrorMessage } from '../../components/ui/ErrorMessage';
+import { Toast } from '../../components/ui/Toast';
 import { useOnboarding } from '../../context/OnboardingContext';
 
 export default function OnboardingStep2() {
@@ -18,10 +19,20 @@ export default function OnboardingStep2() {
   const [currentStressors, setCurrentStressors] = useState<string[]>([]);
   const [livingSituation, setLivingSituation] = useState<string>('');
   const [errors, setErrors] = useState<{[key: string]: string}>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
 
   // Update state when data is loaded from context
   React.useEffect(() => {
-    console.log(`🔄 Step2 useEffect - isLoading: ${isLoading}, step2Data:`, step2Data);
+    console.log(`🔄 Step2 useEffect - isLoading: ${isLoading}`);
+    console.log(`🔄 Step2 useEffect - full onboardingData:`, onboardingData);
+    console.log(`🔄 Step2 useEffect - step1Data:`, onboardingData.step1);
+    console.log(`🔄 Step2 useEffect - step2Data:`, step2Data);
+    
     if (!isLoading && step2Data && Object.keys(step2Data).length > 0) {
       console.log(`📝 Loading step2 data:`, step2Data);
       setRelationshipStatus(step2Data.relationshipStatus || '');
@@ -29,7 +40,7 @@ export default function OnboardingStep2() {
       setCurrentStressors(step2Data.currentStressors || []);
       setLivingSituation(step2Data.livingSituation || '');
     }
-  }, [isLoading, step2Data]);
+  }, [isLoading, step2Data, onboardingData]);
 
   // Show loading state while data is being loaded
   if (isLoading) {
@@ -125,8 +136,15 @@ export default function OnboardingStep2() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleNext = () => {
-    if (!validate()) return;
+  const handleNext = async () => {
+    if (!validate()) {
+      setToast({
+        visible: true,
+        message: 'Please ensure all required fields are completed.',
+        type: 'error',
+      });
+      return;
+    }
 
     // Save data and proceed
     const stepData = {
@@ -136,8 +154,20 @@ export default function OnboardingStep2() {
       livingSituation
     };
 
-    updateStepData('step2', stepData);
-    router.push('/onboarding/step3' as any);
+    try {
+      setIsSaving(true);
+      await updateStepData('step2', stepData);
+      router.push('/onboarding/step3' as any);
+    } catch (error) {
+      console.error('❌ Step2 - Failed to save data:', error);
+      alert('Failed to save your progress. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleHideToast = () => {
+    setToast(prev => ({ ...prev, visible: false }));
   };
 
   return (
@@ -155,6 +185,12 @@ export default function OnboardingStep2() {
           showsVerticalScrollIndicator={false}
         >
           <View className="flex-1 px-6">
+            <Toast
+              visible={toast.visible}
+              message={toast.message}
+              type={toast.type}
+              onHide={handleHideToast}
+            />
             {/* Header */}
             <View className="flex-row items-center justify-center py-4">
               <Text className="text-2xl mt-2 font-heading text-white text-center">Life Context & Relationships</Text>
@@ -286,7 +322,7 @@ export default function OnboardingStep2() {
             {/* Navigation */}
             <View className="flex-row justify-center space-x-4 pb-4">
               <TouchableOpacity
-                onPress={() => router.back()}
+                onPress={() => router.push('/onboarding/step1' as any)}
                 className="bg-blue-custom px-6 py-3 rounded-xl border border-white"
                 style={{ marginRight: 8 }}
               >
@@ -294,9 +330,16 @@ export default function OnboardingStep2() {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleNext}
-                className="bg-white px-6 py-3 rounded-xl border border-blue-custom"
+                disabled={isSaving}
+                className={`px-6 py-3 rounded-xl border ${
+                  isSaving ? 'bg-gray-300 border-gray-300' : 'bg-white border-blue-custom'
+                }`}
               >
-                <Text className="text-blue-custom font-medium text-center">Next</Text>
+                <Text className={`font-medium text-center ${
+                  isSaving ? 'text-gray-500' : 'text-blue-custom'
+                }`}>
+                  {isSaving ? 'Saving...' : 'Next'}
+                </Text>
               </TouchableOpacity>
             </View>
             <View style={{ marginTop: 16 }}>

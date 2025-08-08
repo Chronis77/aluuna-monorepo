@@ -14,110 +14,620 @@ model users {
   id                String   @id @default(uuid())
   name              String?
   email             String   @unique
-  password          String?  // Added for local authentication
+  password          String?
   created_at        DateTime @default(now())
   onboarding_skipped Boolean @default(false)
+  onboarding_completed_at DateTime?
   updated_at        DateTime @default(now())
   
-  // Relations
-  memory_profiles   memory_profiles?
-  conversation_messages conversation_messages[]
-  conversations    conversations[]
-  inner_parts       inner_parts[]
-  stuck_points      stuck_points[]
-  coping_tools      coping_tools[]
-  shadow_themes     shadow_themes[]
-  pattern_loops     pattern_loops[]
-  mantras           mantras[]
-  relationships     relationships[]
-  insights          insights[]
-  emotional_trends  emotional_trends[]
-  crisis_flags      crisis_flags[]
-  value_conflicts   value_conflicts[]
-  memory_snapshots  memory_snapshots[]
-  daily_practices   daily_practices[]
-  daily_practice_logs daily_practice_logs[]
-  data_exports      data_exports[]
-  feedback          feedback[]
-  feedback_log      feedback_log[]
-  free_journal_entries free_journal_entries[]
-  growth_milestones_log growth_milestones_log[]
-  habit_streaks     habit_streaks[]
-  prompt_logs       prompt_logs[]
-  conversation_continuity conversation_continuity[]
-  user_preferences  user_preferences?
-  value_compass     value_compass?
-  onboarding_progress onboarding_progress?
+  // Relations to all user-specific tables
+  user_profile_summary user_profile_summary?
+  user_ai_preferences user_ai_preferences?
+  user_themes user_themes[]
+  user_people user_people[]
+  user_coping_tools user_coping_tools[]
+  user_goals user_goals[]
+  user_therapy_preferences user_therapy_preferences?
+  user_trauma_patterns user_trauma_patterns[]
+  user_pattern_loops user_pattern_loops[]
+  user_shadow_themes user_shadow_themes[]
+  user_ancestral_issues user_ancestral_issues[]
+  user_current_practices user_current_practices[]
+  user_regulation_strategies user_regulation_strategies[]
+  user_dysregulating_factors user_dysregulating_factors[]
+  user_role_model_traits user_role_model_traits[]
+  user_growth_milestones user_growth_milestones[]
+  user_emotional_patterns user_emotional_patterns[]
+  user_relationship_dynamics user_relationship_dynamics[]
+  user_growth_opportunities user_growth_opportunities[]
+  user_therapeutic_approach user_therapeutic_approach?
+  user_risk_factors user_risk_factors[]
+  user_strengths user_strengths[]
+  user_mood_trends user_mood_trends[]
+  user_emotional_states user_emotional_states[]
+  user_support_system user_support_system[]
+  user_current_stressors user_current_stressors[]
+  user_daily_habits user_daily_habits[]
+  user_substance_use user_substance_use[]
+  user_previous_therapy user_previous_therapy[]
+  user_sleep_routine user_sleep_routine?
+  user_suicidal_thoughts user_suicidal_thoughts[]
+  user_relationship_status user_relationship_status?
+  user_living_situation user_living_situation?
+  user_spiritual_path user_spiritual_path?
+  user_insight_notes user_insight_notes[]
+  
+  // Relations to existing tables (renamed with user_ prefix)
+  user_conversations user_conversations[]
+  user_conversation_messages user_conversation_messages[]
+  user_crisis_flags user_crisis_flags[]
+  user_daily_practices user_daily_practices[]
+  user_daily_practice_logs user_daily_practice_logs[]
+  user_data_exports user_data_exports[]
+  user_emotional_trends user_emotional_trends[]
+  user_feedback_log user_feedback_log[]
+  user_free_journal_entries user_free_journal_entries[]
+  user_growth_milestones_log user_growth_milestones_log[]
+  user_habit_streaks user_habit_streaks[]
+  user_inner_parts user_inner_parts[]
+  user_insights user_insights[]
+  user_mantras user_mantras[]
+  user_memory_snapshots user_memory_snapshots[]
+  user_onboarding_progress user_onboarding_progress?
+  user_prompt_logs user_prompt_logs[]
+  user_relationships user_relationships[]
+  user_preferences user_preferences?
+  user_value_compass user_value_compass?
+  user_conversation_continuity user_conversation_continuity[]
+  
+  // Relations to non-user tables
+  feedback feedback[]
 }
 
-model memory_profiles {
-  id                      String   @id @default(cuid())
+model user_profile_summary {
+  id                      String   @id @default(uuid())
   user_id                 String   @unique
   user                    users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at              DateTime @default(now())
-  updated_at              DateTime @default(now())
-  
-  // Core profile data - now using JSONB for better flexibility
-  themes                  Json?
-  people                  Json?
-  coping_tools            Json?
-  goals                   Json?
-  summary                 Json?
-  preferred_therapy_styles Json?
-  preferred_tone          Json?
-  trauma_patterns         Json?
-  pattern_loops           Json?
-  shadow_themes           Json?
-  ancestral_issues        Json?
-  current_practices       Json?
-  regulation_strategies   Json?
-  dysregulating_factors   Json?
   spiritual_connection_level Int?
-  spiritual_path_notes    Json?
-  role_model_traits       Json?
   personal_agency_level   Int?
   boundaries_awareness    Int?
   self_development_capacity Int?
   hard_truths_tolerance   Int?
   awareness_level         Int?
-  insight_notes           Json?
-  stuck_points            Json?
-  growth_milestones       Json?
-  suicidal_risk_level     Int?
-  emotional_patterns      Json?
-  relationship_dynamics   Json?
-  growth_opportunities    Json?
-  therapeutic_approach    Json?
-  risk_factors            Json?
-  strengths               Json?
-  motivation_for_joining  Json?
-  hopes_to_achieve        Json?
-  previous_therapy        Json?
-  therapy_type            Json?
-  therapy_duration        Json?
-  sleep_routine           Json?
-  mood_trends             Json?
+  suicidal_risk_level     Int? @db.SmallInt
   sleep_quality           String?
   mood_score_initial      Int?
-  emotional_states_initial Json?
-  suicidal_thoughts_initial Json?
-  relationship_status     Json?
-  living_situation        Json?
-  support_system          Json?
-  current_stressors       Json?
-  daily_habits            Json?
-  substance_use           Json?
-  biggest_challenge       Json?
-  biggest_obstacle        Json?
+  biggest_challenge       String?
+  biggest_obstacle        String?
+  motivation_for_joining  String?
+  hopes_to_achieve        String?
+  created_at              DateTime @default(now())
+  updated_at              DateTime @default(now())
 }
 
-model conversation_messages {
+model user_ai_preferences {
+  id                      String   @id @default(uuid())
+  user_id                 String   @unique
+  user                    users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  ai_voice_style          String?
+  growth_vs_support       String?
+  pushback_level          Int?
+  self_awareness_level    Int?
+  goal_modeling_level     Int?
+  therapeutic_approach    String?
+  validation_vs_challenge Int?
+  directness_level        Int?
+  emotional_tone          String?
+  reflection_depth        Int?
+  memory_recall_frequency Int?
+  goal_focus_level        Int?
+  session_length_preference String?
+  voice_output_style      String?
+  check_in_frequency      String?
+  crisis_sensitivity_level Int?
+  preferred_language      String?
+  notes                   String?
+  created_at              DateTime @default(now())
+  updated_at              DateTime @default(now())
+}
+
+model user_themes {
+  id                String   @id @default(uuid())
+  user_id           String
+  user              users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  theme_name        String
+  theme_category    String?
+  importance_level  Int?
+  is_active         Boolean @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @default(now())
+}
+
+model user_people {
+  id                String   @id @default(uuid())
+  user_id           String
+  user              users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  name              String
+  relationship_type String?
+  role              String?
+  importance_level  Int?
+  notes             String?
+  is_active         Boolean @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @default(now())
+}
+
+model user_coping_tools {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  tool_name           String
+  tool_category       String?
+  effectiveness_rating Int?
+  description         String?
+  when_to_use         String?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_goals {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  goal_title          String
+  goal_description    String?
+  goal_category       String?
+  priority_level      Int?
+  target_date         DateTime?
+  status              String @default("active")
+  progress_percentage Int @default(0)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_therapy_preferences {
+  id                      String   @id @default(uuid())
+  user_id                 String   @unique
+  user                    users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  preferred_therapy_styles String[]
+  preferred_tone          String?
+  communication_style     String?
+  feedback_frequency      String?
+  session_length_preference Int?
+  created_at              DateTime @default(now())
+  updated_at              DateTime @default(now())
+}
+
+model user_trauma_patterns {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  pattern_name        String
+  pattern_description String?
+  trigger_events      String[]
+  emotional_response  String?
+  coping_strategies   String[]
+  severity_level      Int?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_pattern_loops {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  loop_name           String
+  trigger_situation   String?
+  automatic_response  String?
+  consequences        String?
+  alternative_responses String[]
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_shadow_themes {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  theme_name          String
+  theme_description   String?
+  triggers            String[]
+  avoidance_behaviors String[]
+  integration_strategies String[]
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_ancestral_issues {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  issue_name          String
+  issue_description   String?
+  generational_impact String?
+  current_manifestation String?
+  healing_approaches  String[]
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_current_practices {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  practice_name       String
+  practice_type       String?
+  frequency           String?
+  effectiveness_rating Int?
+  notes               String?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_regulation_strategies {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  strategy_name       String
+  strategy_type       String?
+  when_to_use         String?
+  effectiveness_rating Int?
+  notes               String?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_dysregulating_factors {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  factor_name         String
+  factor_type         String?
+  impact_level        Int?
+  triggers            String[]
+  coping_strategies   String[]
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_role_model_traits {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  trait_name          String
+  person_name         String?
+  trait_description   String?
+  aspiration_level    Int?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_growth_milestones {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  milestone_title     String
+  milestone_description String?
+  category            String?
+  date_achieved       DateTime?
+  significance_level  Int?
+  lessons_learned     String?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_emotional_patterns {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  pattern_name        String
+  emotional_state     String?
+  triggers            String[]
+  duration_pattern    String?
+  intensity_level     Int?
+  coping_strategies   String[]
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_relationship_dynamics {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  relationship_type   String
+  dynamic_pattern     String?
+  communication_style String?
+  conflict_resolution String?
+  emotional_safety_level Int?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_growth_opportunities {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  opportunity_title   String
+  opportunity_description String?
+  area_of_growth      String?
+  readiness_level     Int?
+  potential_impact    String?
+  action_steps        String[]
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_therapeutic_approach {
+  id                      String   @id @default(uuid())
+  user_id                 String   @unique
+  user                    users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  preferred_approaches    String[]
+  working_alliance_style  String?
+  feedback_preferences    String?
+  session_structure_preference String?
+  created_at              DateTime @default(now())
+  updated_at              DateTime @default(now())
+}
+
+model user_risk_factors {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  risk_factor_name    String
+  risk_category       String?
+  severity_level      Int?
+  triggers            String[]
+  warning_signs       String[]
+  safety_plan         String?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_strengths {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  strength_name       String
+  strength_category   String?
+  confidence_level    Int?
+  how_developed       String?
+  how_utilized        String?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_mood_trends {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  recorded_date       DateTime
+  mood_score          Int?
+  mood_label          String?
+  contributing_factors String[]
+  notes               String?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_emotional_states {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  state_name          String
+  state_description   String?
+  physical_sensations String[]
+  thoughts_patterns   String[]
+  behaviors           String[]
+  intensity_level     Int?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_support_system {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  person_name         String
+  relationship_type   String?
+  support_type        String[]
+  reliability_level   Int?
+  contact_info        String?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_current_stressors {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  stressor_name       String
+  stressor_type       String?
+  impact_level        Int?
+  duration            String?
+  coping_strategies   String[]
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_daily_habits {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  habit_name          String
+  habit_category      String?
+  frequency           String?
+  consistency_level   Int?
+  impact_on_wellbeing String?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_substance_use {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  substance_name      String
+  usage_pattern       String?
+  frequency           String?
+  impact_level        Int?
+  triggers            String[]
+  harm_reduction_strategies String[]
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_previous_therapy {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  therapy_type        String
+  therapist_name      String?
+  duration            String?
+  effectiveness_rating Int?
+  key_insights        String?
+  termination_reason  String?
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_sleep_routine {
+  id                      String   @id @default(uuid())
+  user_id                 String   @unique
+  user                    users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  bedtime                 String?
+  wake_time               String?
+  sleep_duration_hours    Decimal?
+  sleep_quality_rating    Int?
+  sleep_hygiene_practices String[]
+  sleep_issues            String[]
+  created_at              DateTime @default(now())
+  updated_at              DateTime @default(now())
+}
+
+model user_suicidal_thoughts {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  thought_date        DateTime
+  thought_content     String?
+  intensity_level     Int?
+  risk_level          Int?
+  protective_factors  String[]
+  safety_plan_activated Boolean @default(false)
+  professional_help_sought Boolean @default(false)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_relationship_status {
+  id                  String   @id @default(uuid())
+  user_id             String   @unique
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  current_status      String?
+  partner_name        String?
+  relationship_duration String?
+  satisfaction_level  Int?
+  challenges          String[]
+  strengths           String[]
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_living_situation {
+  id                  String   @id @default(uuid())
+  user_id             String   @unique
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  living_arrangement  String?
+  location            String?
+  housemates          String[]
+  financial_stability String?
+  housing_satisfaction Int?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_spiritual_path {
+  id                  String   @id @default(uuid())
+  user_id             String   @unique
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  spiritual_beliefs   String[]
+  practices           String[]
+  community_involvement String?
+  connection_level    Int?
+  spiritual_challenges String[]
+  spiritual_growth_goals String[]
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+model user_insight_notes {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  insight_title       String
+  insight_content     String
+  insight_category    String?
+  importance_level    Int?
+  related_themes      String[]
+  action_items        String[]
+  is_active           Boolean @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+}
+
+// Updated existing tables with user_ prefix
+model user_conversations {
+  id          String    @id @default(uuid())
+  user_id     String
+  user        users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  started_at  DateTime  @default(now())
+  ended_at    DateTime?
+  title       String?
+  context_summary String?
+  mood_at_start Int?
+  mood_at_end Int?
+  context_json Json?
+  description String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  
+  // Relations
+  user_conversation_messages user_conversation_messages[]
+  user_conversation_continuity user_conversation_continuity[]
+  user_daily_practices user_daily_practices[]
+  user_growth_milestones_log user_growth_milestones_log[]
+  user_conversation_themes user_conversation_themes[]
+}
+
+model user_conversation_messages {
   id                String   @id @default(uuid())
   user_id           String
   user              users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
   conversation_id   String?
-  conversation      conversations? @relation(fields: [conversation_id], references: [id])
+  conversation      user_conversations? @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
   created_at        DateTime @default(now())
+  updated_at        DateTime @default(now())
   input_type        String?
   input_transcript  String?
   gpt_response      String?
@@ -128,315 +638,211 @@ model conversation_messages {
   tags              String[]
   
   // Relations
-  stuck_points      stuck_points[]
-  coping_tools      coping_tools[]
-  shadow_themes     shadow_themes[]
-  pattern_loops     pattern_loops[]
-  daily_practices   daily_practices[]
-  prompt_logs       prompt_logs[]
-  conversation_themes conversation_themes[]
-  feedback_log      feedback_log[]
-  growth_milestones_log growth_milestones_log[]
+  user_crisis_flags user_crisis_flags[]
+  user_feedback_log user_feedback_log[]
+  user_prompt_logs user_prompt_logs[]
+  user_growth_milestones_log user_growth_milestones_log[]
 }
 
-model conversations {
-  id          String    @id @default(uuid())
-  user_id     String
-  user        users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime?
-  started_at  DateTime  @default(now())
-  ended_at    DateTime?
-  title       String?
-  context_summary String?
-  mood_at_start Int?
-  mood_at_end Int?
-  context_json Json?
-  description String?
-  conversation_messages conversation_messages[]
-  conversation_continuity conversation_continuity[]
-  daily_practices daily_practices[]
-  growth_milestones_log growth_milestones_log[]
-}
-
-model inner_parts {
-  id          String   @id @default(cuid())
+model user_crisis_flags {
+  id          String   @id @default(uuid())
   user_id     String
   user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  updated_at  DateTime @default(now())
-  name        String?
-  role        String?
-  tone        String?
-  description String?
-}
-
-model stuck_points {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @default(now())
-  description String
-  conversation_message_id String?
-  conversation_message conversation_messages? @relation(fields: [conversation_message_id], references: [id])
-}
-
-model coping_tools {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @default(now())
-  name        String
-  description String
-  category    String?
-  effectiveness Int?
-  conversation_message_id String?
-  conversation_message conversation_messages? @relation(fields: [conversation_message_id], references: [id])
-}
-
-model shadow_themes {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @default(now())
-  theme       String
-  description String?
-  conversation_message_id String?
-  conversation_message conversation_messages? @relation(fields: [conversation_message_id], references: [id])
-}
-
-model pattern_loops {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @default(now())
-  pattern     String
-  description String?
-  trigger     String?
-  response    String?
-  conversation_message_id String?
-  conversation_message conversation_messages? @relation(fields: [conversation_message_id], references: [id])
-}
-
-model mantras {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime @default(now())
-  text        String
-  source      String?
-  is_favorite Boolean @default(false)
-  tags        String[]
-  is_pinned   Boolean @default(false)
-}
-
-model relationships {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @default(now())
-  name        String
-  role        String
-  notes       String?
-  is_active   Boolean @default(true)
-}
-
-model insights {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @default(now())
-  insight_text String
-  related_theme String?
-  importance  Int @default(5)
-}
-
-model emotional_trends {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime @default(now())
-  recorded_at DateTime @default(now())
-  mood_score  Int
-  mood_label  String?
-  notes       String?
-}
-
-model crisis_flags {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime @default(now())
-  flag_type   String?
+  session_id  String?
+  session     user_conversation_messages? @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  flag_type   String
   triggered_at DateTime @default(now())
   reviewed    Boolean @default(false)
-}
-
-model value_conflicts {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
   created_at  DateTime @default(now())
   updated_at  DateTime @default(now())
-  conflict    String
-  description String?
 }
 
-model memory_snapshots {
-  id          String   @id @default(cuid())
+model user_daily_practices {
+  id          String   @id @default(uuid())
   user_id     String
   user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime @default(now())
-  summary     String
-  key_themes  String[]
-  generated_by String @default("gpt")
-}
-
-model daily_practices {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime @default(now())
   date        DateTime @default(now())
   source      String?
   prompt_text String?
   completed_at DateTime?
   related_session_id String?
+  conversation user_conversations? @relation(fields: [related_session_id], references: [id], onDelete: SetNull)
   is_suggested Boolean @default(false)
   is_pinned   Boolean @default(false)
-  conversation conversations? @relation(fields: [related_session_id], references: [id])
-  daily_practice_logs daily_practice_logs[]
-  conversation_messages conversation_messages[]
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  
+  // Relations
+  user_daily_practice_logs user_daily_practice_logs[]
 }
 
-model daily_practice_logs {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  practice_id String
-  practice    daily_practices @relation(fields: [practice_id], references: [id])
-  date        DateTime?
-  mood_before Int?
-  mood_after  Int?
-  reflection  String?
-}
-
-model data_exports {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  requested_at DateTime?
-  export_url  String?
-  status      String @default("pending")
-}
-
-model feedback {
+model user_daily_practice_logs {
   id          String   @id @default(uuid())
   user_id     String
   user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  practice_id String
+  practice    user_daily_practices @relation(fields: [practice_id], references: [id], onDelete: Cascade)
+  date        DateTime @default(now())
+  mood_before Int?
+  mood_after  Int?
+  reflection  String?
   created_at  DateTime @default(now())
-  raw_feedback String
-  ai_summary  String?
-  priority    String?
-  feedback_type String @default("general")
-  device_info Json?
-  app_version String?
-  processed_at DateTime?
-  status      String @default("pending")
-  tags        String[]
-  metadata    Json?
+  updated_at  DateTime @default(now())
 }
 
-model feedback_log {
-  id          String   @id @default(cuid())
+model user_data_exports {
+  id          String   @id @default(uuid())
   user_id     String
   user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  requested_at DateTime @default(now())
+  export_url  String?
+  status      String @default("pending")
   created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+}
+
+model user_emotional_trends {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  recorded_at DateTime @default(now())
+  mood_score  Int?
+  mood_label  String?
+  notes       String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+}
+
+model user_feedback_log {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  session_id  String?
+  session     user_conversation_messages? @relation(fields: [session_id], references: [id], onDelete: Cascade)
   rating      Int?
   comment     String?
-  session_id  String?
-  conversation_message conversation_messages? @relation(fields: [session_id], references: [id])
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
 }
 
-model free_journal_entries {
-  id          String   @id @default(cuid())
+model user_free_journal_entries {
+  id          String   @id @default(uuid())
   user_id     String
   user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  created_at  DateTime @default(now())
   entry_text  String
   tags        String[]
   mood_score  Int?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
 }
 
-model growth_milestones_log {
-  id          String   @id @default(cuid())
+model user_growth_milestones_log {
+  id          String   @id @default(uuid())
   user_id     String
   user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
   milestone   String
   related_session_id String?
+  conversation user_conversations? @relation(fields: [related_session_id], references: [id], onDelete: SetNull)
   date_achieved DateTime?
   method      String?
-  conversation conversations? @relation(fields: [related_session_id], references: [id])
-  conversation_messages conversation_messages[]
-}
-
-model habit_streaks {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  habit_type  String?
-  current_streak Int?
-  longest_streak Int?
-  last_entry  DateTime?
-}
-
-model prompt_logs {
-  id          String   @id @default(cuid())
-  user_id     String
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
   created_at  DateTime @default(now())
-  prompt_text String?
-  gpt_model   String?
-  response_text String?
-  session_id  String?
-  conversation_message conversation_messages? @relation(fields: [session_id], references: [id])
+  updated_at  DateTime @default(now())
+  
+  // Relations
+  user_conversation_messages user_conversation_messages[]
 }
 
-model conversation_continuity {
+model user_habit_streaks {
   id          String   @id @default(uuid())
   user_id     String
   user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  conversation_id String
-  conversation conversations @relation(fields: [conversation_id], references: [id])
+  habit_type  String
+  current_streak Int @default(0)
+  longest_streak Int @default(0)
+  last_entry  DateTime?
   created_at  DateTime @default(now())
   updated_at  DateTime @default(now())
-  last_message_count Int @default(0)
-  last_session_phase String @default("start")
-  last_therapeutic_focus String?
-  last_emotional_state String?
-  last_timestamp DateTime @default(now())
-  session_duration_minutes Int @default(0)
-  is_resuming  Boolean @default(false)
-  continuity_context String?
 }
 
-model conversation_themes {
-  conversation_id String
-  theme_id    String
-  conversation conversation_messages @relation(fields: [conversation_id], references: [id])
-  theme       themes @relation(fields: [theme_id], references: [id])
-  
-  @@id([conversation_id, theme_id])
+model user_inner_parts {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  name        String
+  role        String?
+  tone        String?
+  description String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
 }
 
-model themes {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  conversation_themes conversation_themes[]
+model user_insights {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  insight_text String
+  related_theme String?
+  importance  Int @default(5)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+}
+
+model user_mantras {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  text        String
+  source      String?
+  is_favorite Boolean @default(false)
+  tags        String[]
+  is_pinned   Boolean @default(false)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+}
+
+model user_memory_snapshots {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  summary     String
+  key_themes  String[]
+  generated_by String @default("gpt")
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+}
+
+model user_onboarding_progress {
+  id          String   @id @default(uuid())
+  user_id     String   @unique
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  onboarding_data Json @default("{}")
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+}
+
+model user_prompt_logs {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  session_id  String?
+  session     user_conversation_messages? @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  prompt_text String?
+  gpt_model   String?
+  response_text String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+}
+
+model user_relationships {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  name        String
+  role        String?
+  notes       String?
+  is_active   Boolean @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
 }
 
 model user_preferences {
@@ -447,23 +853,74 @@ model user_preferences {
   preferred_therapist_name String?
   daily_reminder_time DateTime?
   timezone    String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
 }
 
-model value_compass {
-  id          String   @id @default(cuid())
+model user_value_compass {
+  id          String   @id @default(uuid())
   user_id     String   @unique
   user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
   core_values String[]
   anti_values String[]
   narrative   String?
   last_reflected_at DateTime?
-}
-
-model onboarding_progress {
-  id          String   @id @default(uuid())
-  user_id     String   @unique
-  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
   created_at  DateTime @default(now())
   updated_at  DateTime @default(now())
-  onboarding_data Json @default("{}")
+}
+
+model user_conversation_continuity {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  conversation_id String
+  conversation user_conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  last_message_count Int @default(0)
+  last_session_phase String @default("start")
+  last_therapeutic_focus String?
+  last_emotional_state String?
+  last_timestamp DateTime @default(now())
+  session_duration_minutes Int @default(0)
+  is_resuming  Boolean @default(false)
+  continuity_context String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+}
+
+// Non-user tables
+model feedback {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  raw_feedback String
+  ai_summary  String?
+  priority    String?
+  feedback_type String @default("general")
+  device_info Json?
+  app_version String?
+  processed_at DateTime?
+  status      String @default("pending")
+  tags        String[]
+  metadata    Json?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+}
+
+model themes {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  
+  // Relations
+  user_conversation_themes user_conversation_themes[]
+}
+
+model user_conversation_themes {
+  conversation_id String
+  theme_id    String
+  conversation user_conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  theme       themes @relation(fields: [theme_id], references: [id], onDelete: Cascade)
+  
+  @@id([conversation_id, theme_id])
 } 

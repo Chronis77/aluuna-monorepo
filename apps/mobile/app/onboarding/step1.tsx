@@ -9,11 +9,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AluunaLoader } from '../../components/AluunaLoader';
 import { ProgressDots } from '../../components/onboarding/ProgressDots';
 import { ErrorMessage } from '../../components/ui/ErrorMessage';
+import { Toast } from '../../components/ui/Toast';
 import { useOnboarding } from '../../context/OnboardingContext';
 
 export default function OnboardingStep1() {
   const router = useRouter();
   const { updateStepData, onboardingData, isLoading, refreshData } = useOnboarding();
+  const [isSaving, setIsSaving] = useState(false);
   
   // Initialize state from context if available
   const step1Data = onboardingData.step1;
@@ -24,6 +26,11 @@ export default function OnboardingStep1() {
   const [sleepQuality, setSleepQuality] = useState<string>('');
   const [showSuicidalWarning, setShowSuicidalWarning] = useState(false);
   const [errors, setErrors] = useState<{[key: string]: string}>({});
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
 
   // Slider animation values - must be before any conditional returns
   const sliderWidth = 280; // Width of the slider track
@@ -188,8 +195,15 @@ export default function OnboardingStep1() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleNext = () => {
-    if (!validate()) return;
+  const handleNext = async () => {
+    if (!validate()) {
+      setToast({
+        visible: true,
+        message: 'Please ensure all required fields are completed.',
+        type: 'error',
+      });
+      return;
+    }
 
     // Check for suicidal thoughts warning
     if (suicidalThoughts === 'Often' || suicidalThoughts === 'Currently') {
@@ -206,11 +220,23 @@ export default function OnboardingStep1() {
       sleepQuality
     };
 
-    updateStepData('step1', stepData);
-    router.push('/onboarding/step2' as any);
+    console.log('💾 Step1 - Saving step data:', stepData);
+    setIsSaving(true);
+    
+    try {
+      await updateStepData('step1', stepData);
+      console.log('💾 Step1 - Data saved successfully, navigating to step2');
+      router.push('/onboarding/step2' as any);
+    } catch (error) {
+      console.error('❌ Step1 - Failed to save data:', error);
+      // You could show an error toast here
+      alert('Failed to save your progress. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleSuicidalWarningConfirm = () => {
+  const handleSuicidalWarningConfirm = async () => {
     setShowSuicidalWarning(false);
     
     // Save data to context and proceed
@@ -222,8 +248,23 @@ export default function OnboardingStep1() {
       sleepQuality
     };
 
-    updateStepData('step1', stepData);
-    router.push('/onboarding/step2' as any);
+    console.log('💾 Step1 - Saving step data (warning confirmed):', stepData);
+    setIsSaving(true);
+    
+    try {
+      await updateStepData('step1', stepData);
+      console.log('💾 Step1 - Data saved successfully, navigating to step2');
+      router.push('/onboarding/step2' as any);
+    } catch (error) {
+      console.error('❌ Step1 - Failed to save data:', error);
+      alert('Failed to save your progress. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleHideToast = () => {
+    setToast(prev => ({ ...prev, visible: false }));
   };
 
   return (
@@ -242,6 +283,12 @@ export default function OnboardingStep1() {
             showsVerticalScrollIndicator={false}
           >
             <View className="flex-1 px-6">
+              <Toast
+                visible={toast.visible}
+                message={toast.message}
+                type={toast.type}
+                onHide={handleHideToast}
+              />
               {/* Header */}
               <View className="flex-row items-center justify-between py-4">
                 <View style={{ width: 60 }} />
@@ -421,9 +468,18 @@ export default function OnboardingStep1() {
             <View className="flex-row justify-center pb-4">
               <TouchableOpacity
                 onPress={handleNext}
-                className="bg-white px-6 py-3 rounded-xl border border-purple-custom"
+                disabled={isSaving}
+                className={`px-6 py-3 rounded-xl border ${
+                  isSaving 
+                    ? 'bg-gray-300 border-gray-300' 
+                    : 'bg-white border-purple-custom'
+                }`}
               >
-                <Text className="text-purple-custom font-medium text-center">Next</Text>
+                <Text className={`font-medium text-center ${
+                  isSaving ? 'text-gray-500' : 'text-purple-custom'
+                }`}>
+                  {isSaving ? 'Saving...' : 'Next'}
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -467,9 +523,14 @@ export default function OnboardingStep1() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleSuicidalWarningConfirm}
-              className="bg-purple-custom px-6 py-3 rounded-lg"
+              disabled={isSaving}
+              className={`px-6 py-3 rounded-lg ${
+                isSaving ? 'bg-gray-400' : 'bg-purple-custom'
+              }`}
             >
-              <Text className="text-white font-medium">Continue anyway</Text>
+              <Text className="text-white font-medium">
+                {isSaving ? 'Saving...' : 'Continue anyway'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

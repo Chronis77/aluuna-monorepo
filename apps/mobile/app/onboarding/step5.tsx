@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AluunaLoader } from '../../components/AluunaLoader';
 import { ProgressDots } from '../../components/onboarding/ProgressDots';
 import { ErrorMessage } from '../../components/ui/ErrorMessage';
+import { Toast } from '../../components/ui/Toast';
 import { useOnboarding } from '../../context/OnboardingContext';
 
 export default function OnboardingStep5() {
@@ -25,6 +26,12 @@ export default function OnboardingStep5() {
   const [motivationLevel, setMotivationLevel] = useState<number>(5);
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [keyboardPadding, setKeyboardPadding] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
 
   // Slider animation values
   const sliderWidth = 280; // Width of the slider track
@@ -153,8 +160,14 @@ export default function OnboardingStep5() {
     );
   };
 
-  const handleNext = () => {
-    if (!validate()) return;
+  const handleNext = async () => {
+    if (!validate()) {
+      const message = coreValues.length < 3
+        ? 'Please select at least 3 core values to continue.'
+        : 'Please ensure all required fields are completed.';
+      setToast({ visible: true, message, type: 'error' });
+      return;
+    }
 
     // Save data and proceed
     const stepData = {
@@ -164,8 +177,20 @@ export default function OnboardingStep5() {
       motivationLevel
     };
 
-    updateStepData('step5', stepData);
-    router.push('/onboarding/step6' as any);
+    try {
+      setIsSaving(true);
+      await updateStepData('step5', stepData);
+      router.push('/onboarding/step6' as any);
+    } catch (error) {
+      console.error('❌ Step5 - Failed to save data:', error);
+      alert('Failed to save your progress. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleHideToast = () => {
+    setToast(prev => ({ ...prev, visible: false }));
   };
 
   const handleInputFocus = () => {
@@ -182,6 +207,12 @@ export default function OnboardingStep5() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView className="flex-1 bg-orange-custom">
+          <Toast
+            visible={toast.visible}
+            message={toast.message}
+            type={toast.type}
+            onHide={handleHideToast}
+          />
           <ScrollView 
             className="flex-1 bg-orange-custom" 
             contentContainerStyle={{ minHeight: 800, paddingBottom: keyboardPadding }}
@@ -324,7 +355,7 @@ export default function OnboardingStep5() {
               {/* Navigation */}
               <View className="flex-row justify-center space-x-4 pb-4">
                 <TouchableOpacity
-                  onPress={() => router.back()}
+                  onPress={() => router.push('/onboarding/step4' as any)}
                   className="bg-orange-custom px-6 py-3 rounded-xl border border-white"
                   style={{ marginRight: 8 }}
                 >
@@ -332,9 +363,16 @@ export default function OnboardingStep5() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={handleNext}
-                  className="bg-white px-6 py-3 rounded-xl border border-orange-custom"
+                  disabled={isSaving}
+                  className={`px-6 py-3 rounded-xl border ${
+                    isSaving ? 'bg-gray-300 border-gray-300' : 'bg-white border-orange-custom'
+                  }`}
                 >
-                  <Text className="text-orange-custom font-medium text-center">Next</Text>
+                  <Text className={`font-medium text-center ${
+                    isSaving ? 'text-gray-500' : 'text-orange-custom'
+                  }`}>
+                    {isSaving ? 'Saving...' : 'Next'}
+                  </Text>
                 </TouchableOpacity>
               </View>
               <View style={{ marginTop: 16 }}>

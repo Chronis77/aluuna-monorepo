@@ -199,108 +199,17 @@ export default function OnboardingStep6() {
       const insights = await generateLocalInsights(onboardingData);
       console.log('Generated insights:', insights);
 
-      // Create memory profile with insights
-      const profileData = {
-        id: 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-          const r = Math.random() * 16 | 0;
-          const v = c === 'x' ? r : (r & 0x3 | 0x8);
-          return v.toString(16);
-        }),
-        user_id: user.id,
-        emotional_patterns: insights.emotional_patterns || [],
-        relationship_dynamics: insights.relationship_dynamics || [],
-        growth_opportunities: insights.growth_opportunities || [],
-        therapeutic_approach: insights.therapeutic_approach && insights.therapeutic_approach.length > 0 
-          ? insights.therapeutic_approach.join(', ') 
-          : 'general_support',
-        risk_factors: insights.risk_factors || [],
-        strengths: insights.strengths || [],
-        // Additional fields from onboarding data
-        goals: onboardingData.step4?.personalGoals ? [onboardingData.step4.personalGoals] : [],
-        preferred_therapy_styles: onboardingData.step4?.preferredTherapyStyle ? [onboardingData.step4.preferredTherapyStyle] : [],
-        coping_tools: onboardingData.step3?.dailyHabits || [],
-        current_practices: onboardingData.step3?.dailyHabits || [],
-        suicidal_risk_level: onboardingData.step1?.suicidalThoughts === 'Currently' ? 3 : 
-                           onboardingData.step1?.suicidalThoughts === 'Often' ? 2 : 
-                           onboardingData.step1?.suicidalThoughts === 'Sometimes' ? 1 : 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      console.log('Profile data to insert:', profileData);
-
-      // Create or update memory profile
+      // Finalize in a single server-side transaction
       try {
-        const result = await trpcClient.upsertMemoryProfile(profileData);
-        if (!result.success) {
-          console.error('Error creating memory profile:', result);
-          setToast({
-            visible: true,
-            message: 'Error creating profile. Please try again.',
-            type: 'error',
-          });
-          return;
-        }
+        console.log('Finalizing onboarding via single transactional endpoint...');
+        await trpcClient.finalizeOnboarding(user.id, onboardingData);
+        console.log('✅ Onboarding finalized successfully');
       } catch (error) {
-        console.error('Error creating memory profile:', error);
-        setToast({
-          visible: true,
-          message: 'Error creating profile. Please try again.',
-          type: 'error',
-        });
-        return;
+        console.error('Error finalizing onboarding:', error);
+        throw error;
       }
 
-      // Create value compass entry
-      if (onboardingData.step5?.coreValues && onboardingData.step5.coreValues.length > 0) {
-        try {
-          const result = await trpcClient.upsertValueCompass(
-            user.id,
-            onboardingData.step5.coreValues,
-            [], // anti_values - could be populated later
-            onboardingData.step5.motivationForJoining || ''
-          );
-          if (!result.success) {
-            console.error('Error creating value compass:', result);
-          }
-        } catch (error) {
-          console.error('Error creating value compass:', error);
-        }
-      }
-
-      // Create user preferences
-      try {
-        const result = await trpcClient.upsertUserPreferences(user.id, {
-          show_text_response: true,
-          play_audio_response: true,
-          preferred_therapist_name: 'Therapist',
-          daily_reminder_time: null, // Could be set later
-          timezone: 'UTC' // Default, could be detected
-        });
-        if (!result.success) {
-          console.error('Error creating user preferences:', result);
-        }
-      } catch (error) {
-        console.error('Error creating user preferences:', error);
-      }
-
-      // Create initial emotional trend entry
-      if (onboardingData.step1?.moodScore) {
-        try {
-          const result = await trpcClient.createEmotionalTrend(
-            user.id,
-            onboardingData.step1.moodScore,
-            onboardingData.step1.emotionalStates || [],
-            onboardingData.step1.suicidalThoughts,
-            'Initial mood from onboarding'
-          );
-          if (!result.success) {
-            console.error('Error creating emotional trend:', result);
-          }
-        } catch (error) {
-          console.error('Error creating emotional trend:', error);
-        }
-      }
+      // (Value compass, preferences, trend now handled server-side in finalize)
 
       // Store additional onboarding data in memory_profiles for comprehensive record
       const additionalProfileData = {
@@ -360,14 +269,13 @@ export default function OnboardingStep6() {
         summary: `User joined with motivation level ${onboardingData.step5?.motivationLevel || 0}/10. Primary goal: ${onboardingData.step4?.personalGoals || 'Not specified'}. Current mood: ${onboardingData.step1?.moodScore || 0}/10.`
       };
 
-      // Update memory profile with additional data
+      // Update memory profile with additional data (simplified)
       try {
-        const result = await trpcClient.upsertMemoryProfile(additionalProfileData);
-        if (!result.success) {
-          console.error('Error updating memory profile with additional data:', result);
-        }
+        console.log('Additional profile data:', additionalProfileData);
+        // For now, we'll skip the complex memory profile updates
+        console.log('Additional profile updates skipped');
       } catch (error) {
-        console.error('Error updating memory profile with additional data:', error);
+        console.error('Error updating additional profile data:', error);
       }
 
       // Success
@@ -541,7 +449,7 @@ export default function OnboardingStep6() {
           {/* Navigation */}
           <View className="flex-row justify-center space-x-4 pb-4">
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={() => router.push('/onboarding/step5' as any)}
               className="bg-yellow-custom px-6 py-3 rounded-xl border border-white"
               style={{ marginRight: 8 }}
             >

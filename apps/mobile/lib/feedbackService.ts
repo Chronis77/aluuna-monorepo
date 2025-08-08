@@ -34,25 +34,22 @@ export class FeedbackService {
       const deviceInfo = submission.deviceInfo || await this.getDeviceInfo();
       const appVersion = submission.appVersion || Constants.expoConfig?.version || '1.0.0';
       
-      // Process feedback with AI
-      const aiProcessed = await this.processFeedbackWithAI(submission.rawFeedback);
-      
-      // Insert into database via tRPC
-      const feedback = await trpcClient.createFeedback(
+      // Server-side AI analysis and insert via tRPC
+      const analyzed = await trpcClient.createFeedbackAnalyzed(
         userId,
-        5, // Default rating for feedback submissions
         submission.rawFeedback,
-        undefined, // session_id
-        aiProcessed.feedbackType
+        undefined,
+        deviceInfo,
+        appVersion
       );
 
-      if (!feedback || !feedback.success) {
-        console.error('❌ Error inserting feedback:', feedback);
+      if (!analyzed || !analyzed.success) {
+        console.error('❌ Error inserting feedback:', analyzed);
         throw new Error('Failed to save feedback');
       }
 
-      console.log('✅ Feedback submitted successfully:', feedback.id);
-      return feedback;
+      console.log('✅ Feedback submitted successfully:', analyzed.data.id);
+      return analyzed.data as any;
       
     } catch (error) {
       console.error('❌ Error in submitFeedback:', error);

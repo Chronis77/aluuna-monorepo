@@ -2,7 +2,9 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Audio } from 'expo-av';
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Text, TouchableOpacity, View } from 'react-native';
-import { config, validateConfig } from '../lib/config';
+import * as FileSystem from 'expo-file-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { trpcClient } from '../lib/trpcClient';
 
 interface VoiceInputProps {
   onTranscription: (text: string) => void;
@@ -29,7 +31,7 @@ export function VoiceInput({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasError, setHasError] = useState(false);
-  const [isWhisperAvailable, setIsWhisperAvailable] = useState(false);
+  const [serviceAvailable, setServiceAvailable] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isStartingRecording, setIsStartingRecording] = useState(false);
   const recordingAnimation = useRef(new Animated.Value(0)).current;
@@ -69,16 +71,16 @@ export function VoiceInput({
           playsInSilentModeIOS: true,
         });
 
-        // Check Whisper API availability without crashing
+        // Check auth token presence for server-side transcription
         try {
-          const whisperAvailable = validateConfig();
-          setIsWhisperAvailable(whisperAvailable);
-          if (!whisperAvailable) {
-            console.log('Whisper API not configured - voice transcription will be disabled');
+          const token = await AsyncStorage.getItem('authToken');
+          setServiceAvailable(!!token);
+          if (!token) {
+            console.log('JWT not available - voice transcription requires login');
           }
         } catch (configError) {
-          console.log('Error checking Whisper configuration:', configError);
-          setIsWhisperAvailable(false);
+          console.log('Error checking token configuration:', configError);
+          setServiceAvailable(false);
         }
         
         setIsInitialized(true);
@@ -104,89 +106,32 @@ export function VoiceInput({
     };
   }, []);
 
-  // Whisper API transcription function with retry logic
+  // Auto-select quick vs R2 based on file size; use R2 upload via Expo FileSystem to avoid Buffer
   const transcribeAudio = async (audioUri: string): Promise<string> => {
-    const maxRetries = 3;
-    const baseDelay = 1000; // 1 second base delay
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        // Check if Whisper is available before attempting transcription
-        if (!isWhisperAvailable) {
-          throw new Error('Voice transcription is not available. Please configure your OpenAI API key.');
-        }
+    const user = await trpcClient.getCurrentUser();
+    const info = await FileSystem.getInfoAsync(audioUri, { size: true });
+    const sizeBytes = (info as any)?.size ?? 0;
+    const QUICK_THRESHOLD_BYTES = 1.5 * 1024 * 1024; // ~1.5MB
 
-        // Validate configuration
-        if (!validateConfig()) {
-          throw new Error('OpenAI API key not configured');
-        }
-
-        // Create form data for the audio file
-        const formData = new FormData();
-        formData.append('file', {
-          uri: audioUri,
-          type: 'audio/m4a',
-          name: 'recording.m4a',
-        } as any);
-        formData.append('model', 'whisper-1');
-        formData.append('response_format', 'json');
-
-        // Make request to Whisper API
-        const response = await fetch(config.openai.whisperEndpoint, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${config.openai.apiKey}`,
-          },
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          const errorMessage = errorData.error?.message || response.statusText;
-          
-          // Check if it's a retryable error (overload, rate limit, etc.)
-          const isRetryable = errorMessage.includes('overloaded') || 
-                             errorMessage.includes('rate limit') || 
-                             errorMessage.includes('try again') ||
-                             response.status >= 500;
-          
-          if (isRetryable && attempt < maxRetries) {
-            const delay = baseDelay * Math.pow(2, attempt - 1); // Exponential backoff
-            console.log(`🔄 Whisper API overloaded, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`);
-            onInfo(`Transcription overloaded, retrying... (${attempt}/${maxRetries})`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            continue; // Try again
-          } else {
-            throw new Error(`Whisper API error: ${errorMessage}`);
-          }
-        }
-
-        const data = await response.json();
-        return data.text || '';
-        
-      } catch (error) {
-        console.error(`Transcription error (attempt ${attempt}/${maxRetries}):`, error);
-        
-        // If this is the last attempt, throw the error
-        if (attempt === maxRetries) {
-          throw error;
-        }
-        
-        // For non-retryable errors, throw immediately
-        if (error instanceof Error && !error.message.includes('overloaded') && 
-            !error.message.includes('rate limit') && !error.message.includes('try again')) {
-          throw error;
-        }
-        
-        // Otherwise, wait and retry
-        const delay = baseDelay * Math.pow(2, attempt - 1);
-        console.log(`🔄 Transcription failed, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`);
-        onInfo(`Transcription failed, retrying... (${attempt}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
+    if (sizeBytes > 0 && sizeBytes <= QUICK_THRESHOLD_BYTES) {
+      // Quick path: base64 to server (fastest for small clips)
+      const base64 = await FileSystem.readAsStringAsync(audioUri, { encoding: FileSystem.EncodingType.Base64 });
+      const quick = await trpcClient.voiceTranscribeQuick(user.id, base64, 'audio/m4a');
+      return (quick?.text || '').toString();
     }
-    
-    throw new Error('Transcription failed after all retry attempts');
+
+    // R2 path for bigger files
+    const presign = await trpcClient.voiceGetPresignedUpload(user.id, undefined, 'audio/m4a');
+    const uploadResult = await FileSystem.uploadAsync(presign.upload_url, audioUri, {
+      httpMethod: 'PUT',
+      headers: { 'Content-Type': 'audio/m4a' },
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    });
+    if (uploadResult.status !== 200) {
+      throw new Error(`Upload failed: ${uploadResult.status} ${uploadResult.body || ''}`);
+    }
+    const result = await trpcClient.voiceTranscribeFromUrl(user.id, presign.file_url, 'audio/m4a');
+    return (result?.text || '').toString();
   };
 
   // Update wave animations based on audio metering
@@ -375,8 +320,8 @@ export function VoiceInput({
         return;
       }
 
-      if (!isWhisperAvailable) {
-        onError('Voice transcription is not available. Please configure your OpenAI API key in the .env file.');
+      if (!serviceAvailable) {
+        onError('Voice transcription is not available. Please sign in.');
         return;
       }
 
@@ -526,15 +471,7 @@ export function VoiceInput({
       // Reset states
       setIsTranscribing(false);
       
-      // Properly dispose of the recording object
-      if (recording) {
-        try {
-          // Ensure recording is stopped and unloaded
-          await recording.stopAndUnloadAsync();
-        } catch (disposeError) {
-          console.log('Error disposing recording:', disposeError);
-        }
-      }
+      // Recording already stopped and unloaded above
       setRecording(null);
       recordingAnimation.stopAnimation();
 
@@ -616,8 +553,8 @@ export function VoiceInput({
       return;
     }
 
-    if (!isWhisperAvailable) {
-      onError('Voice transcription is not available. Please configure your OpenAI API key in the .env file.');
+    if (!serviceAvailable) {
+      onError('Voice transcription is not available. Please sign in.');
       return;
     }
 
@@ -654,8 +591,8 @@ export function VoiceInput({
     );
   }
 
-  // Show disabled state if Whisper is not available
-  if (!isWhisperAvailable) {
+  // Show disabled state if service is not available (e.g., user not signed in)
+  if (!serviceAvailable) {
     return (
       <View>
         <TouchableOpacity

@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AluunaLoader } from '../../components/AluunaLoader';
 import { ProgressDots } from '../../components/onboarding/ProgressDots';
 import { ErrorMessage } from '../../components/ui/ErrorMessage';
+import { Toast } from '../../components/ui/Toast';
 import { useOnboarding } from '../../context/OnboardingContext';
 
 export default function OnboardingStep4() {
@@ -23,6 +24,12 @@ export default function OnboardingStep4() {
   const [biggestObstacle, setBiggestObstacle] = useState<string>('');
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [keyboardPadding, setKeyboardPadding] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
 
   // Update state when data is loaded from context
   React.useEffect(() => {
@@ -115,8 +122,15 @@ export default function OnboardingStep4() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleNext = () => {
-    if (!validate()) return;
+  const handleNext = async () => {
+    if (!validate()) {
+      setToast({
+        visible: true,
+        message: 'Please ensure all required fields are completed.',
+        type: 'error',
+      });
+      return;
+    }
 
     // Save data and proceed
     const stepData = {
@@ -128,8 +142,20 @@ export default function OnboardingStep4() {
       biggestObstacle
     };
 
-    updateStepData('step4', stepData);
-    router.push('/onboarding/step5' as any);
+    try {
+      setIsSaving(true);
+      await updateStepData('step4', stepData);
+      router.push('/onboarding/step5' as any);
+    } catch (error) {
+      console.error('❌ Step4 - Failed to save data:', error);
+      alert('Failed to save your progress. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleHideToast = () => {
+    setToast(prev => ({ ...prev, visible: false }));
   };
 
   const handleInputFocus = () => {
@@ -154,6 +180,12 @@ export default function OnboardingStep4() {
           ref={scrollViewRef}
         >
           <View className="flex-1 px-6">
+            <Toast
+              visible={toast.visible}
+              message={toast.message}
+              type={toast.type}
+              onHide={handleHideToast}
+            />
             {/* Header */}
             <View className="flex-row items-center justify-between py-4">
               <View style={{ width: 60 }} />
@@ -329,7 +361,7 @@ export default function OnboardingStep4() {
             {/* Navigation */}
             <View className="flex-row justify-center space-x-4 pb-4">
               <TouchableOpacity
-                onPress={() => router.back()}
+                onPress={() => router.push('/onboarding/step3' as any)}
                 className="bg-green-custom px-6 py-3 rounded-xl border border-white"
                 style={{ marginRight: 8 }}
               >
@@ -337,9 +369,16 @@ export default function OnboardingStep4() {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleNext}
-                className="bg-white px-6 py-3 rounded-xl border border-green-custom"
+                disabled={isSaving}
+                className={`px-6 py-3 rounded-xl border ${
+                  isSaving ? 'bg-gray-300 border-gray-300' : 'bg-white border-green-custom'
+                }`}
               >
-                <Text className="text-green-custom font-medium text-center">Next</Text>
+                <Text className={`font-medium text-center ${
+                  isSaving ? 'text-gray-500' : 'text-green-custom'
+                }`}>
+                  {isSaving ? 'Saving...' : 'Next'}
+                </Text>
               </TouchableOpacity>
             </View>
             <View style={{ marginTop: 16 }}>

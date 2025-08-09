@@ -631,6 +631,7 @@ async function storeGoal(args: any) {
 
 async function storeCopingTool(args: any) {
   const { userId, name, category, effectiveness, description, when_to_use } = StoreCopingToolSchema.parse(args);
+  // Check for exact duplicate (same name) - but allow different coping tools
   const dup = await prisma.user_coping_tools.findFirst({
     where: {
       user_id: userId,

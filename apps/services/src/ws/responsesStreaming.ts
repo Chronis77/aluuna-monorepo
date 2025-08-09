@@ -483,17 +483,32 @@ export async function handleResponsesStreaming(socket: any, req: StreamingReques
           timestamp: new Date().toISOString()
         });
 
-        // Parse arguments and inject actual user ID if it's set to placeholder
-        let parsedArgs = JSON.parse(tc.function.arguments);
-        if (parsedArgs.userId === 'uuid') {
-          parsedArgs.userId = effectiveUserId;
-          if (process.env['LOG_OPENAI'] === 'true') {
-            logger.warn('Replaced placeholder userId with actual userId', { 
-              toolName: tc.function.name, 
-              effectiveUserId 
-            });
-          }
-        }
+                        // Parse arguments and inject actual user ID if it's set to placeholder
+                let parsedArgs = JSON.parse(tc.function.arguments);
+                
+                // ALWAYS log the userId value for debugging
+                logger.warn('DEBUG: Tool call userId check', {
+                  toolName: tc.function.name,
+                  originalUserId: parsedArgs.userId,
+                  userIdType: typeof parsedArgs.userId,
+                  userIdLength: parsedArgs.userId?.length,
+                  effectiveUserId
+                });
+                
+                if (parsedArgs.userId === 'uuid' || parsedArgs.userId === 'user_id' || parsedArgs.userId === 'user' || !parsedArgs.userId || typeof parsedArgs.userId !== 'string' || parsedArgs.userId.length < 10) {
+                  parsedArgs.userId = effectiveUserId;
+                  logger.warn('✅ Replaced placeholder userId with actual userId', {
+                    toolName: tc.function.name,
+                    originalUserId: tc.function.arguments,
+                    effectiveUserId
+                  });
+                } else {
+                  logger.warn('❌ Did NOT replace userId - seemed valid', {
+                    toolName: tc.function.name,
+                    userId: parsedArgs.userId,
+                    effectiveUserId
+                  });
+                }
         
         const result = await handleToolCall({ 
           id: tc.id, 

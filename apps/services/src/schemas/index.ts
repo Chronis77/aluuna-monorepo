@@ -142,7 +142,7 @@ export const StoreInsightToolSchema = z.object({
   userId: z.string().describe('The user ID to store insight for'),
   insight: z.string().describe('The insight text to store'),
   category: z.string().optional().describe('The category of the insight'),
-  confidence: z.number().optional().describe('Confidence score for the insight (0-1)'),
+  confidence: z.number().min(1).max(10).optional().describe('Confidence score for the insight (1-10)'),
   sessionId: z.string().optional().describe('The conversation message ID this insight is related to'),
 });
 

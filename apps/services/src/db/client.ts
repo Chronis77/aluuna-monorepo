@@ -17,16 +17,25 @@ try {
   throw error;
 }
 
-// Create a more robust Prisma client with connection pool management
-// Uses DATABASE_URL with pgbouncer=true to disable prepared statements
+// Create a more robust Prisma client with configurable logging
+// Control Prisma logs via PRISMA_LOG env (comma-separated), default: error
+// Example: PRISMA_LOG=error,warn or PRISMA_LOG=error
+const prismaLogEnv = (process.env.PRISMA_LOG || 'error')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+// Force only valid levels
+const validLevels = new Set(['query', 'info', 'warn', 'error']);
+const prismaLogLevels = Array.from(new Set(prismaLogEnv.filter((l) => validLevels.has(l))));
+if (prismaLogLevels.length === 0) prismaLogLevels.push('error');
+
 export const prisma = new PrismaClient({
-  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-  // Use formatted connection string with pgbouncer=true
+  log: prismaLogLevels as any,
   datasources: {
     db: {
-      url: formattedDatabaseUrl
-    }
-  }
+      url: formattedDatabaseUrl,
+    },
+  },
 });
 
 // Log connection info
@@ -120,17 +129,25 @@ prisma.$use(async (params, next) => {
       totalQueryTime += duration;
       queryStats.averageTime = totalQueryTime / queryStats.total;
       
-      if (duration > 5000) {
-        queryStats.verySlowQueries++;
-        console.warn(`Very slow query detected: ${duration}ms for ${params.model}.${params.action}`);
-      } else if (duration > 1000) {
-        queryStats.slowQueries++;
-        console.warn(`Slow query detected: ${duration}ms for ${params.model}.${params.action}`);
+      const logSlow = process.env.LOG_SLOW_QUERIES === 'true';
+      if (logSlow) {
+        if (duration > 5000) {
+          queryStats.verySlowQueries++;
+          logger.warn('Very slow query detected', { durationMs: duration, model: params.model, action: params.action });
+        } else if (duration > 1000) {
+          queryStats.slowQueries++;
+          logger.debug('Slow query detected', { durationMs: duration, model: params.model, action: params.action });
+        }
       }
       
-      // Log connection pool health
-      if (queryStats.total % 100 === 0) {
-        console.log(`📊 Query stats: ${queryStats.total} total, ${queryStats.slowQueries} slow, ${queryStats.verySlowQueries} very slow, ${queryStats.connectionErrors} connection errors`);
+      // Optional: log connection pool health
+      if (process.env.LOG_QUERY_STATS === 'true' && queryStats.total % 100 === 0) {
+        logger.debug('📊 Query stats', {
+          total: queryStats.total,
+          slow: queryStats.slowQueries,
+          verySlow: queryStats.verySlowQueries,
+          connectionErrors: queryStats.connectionErrors,
+        });
       }
       
       return result;
@@ -168,8 +185,7 @@ prisma.$use(async (params, next) => {
         retryCount++;
         const errorType = error?.message?.includes('does not exist') ? 'does not exist' : 
                          error?.message?.includes('already exists') ? 'already exists' : 'connection';
-        console.error(`Connection error detected (${errorType}) (attempt ${retryCount}/${maxRetries + 1})`);
-        console.error(`Error details: ${error?.message}`);
+        logger.debug('Connection error detected', { errorType, attempt: `${retryCount}/${maxRetries + 1}`, message: error?.message });
         
 
         
@@ -179,17 +195,17 @@ prisma.$use(async (params, next) => {
             const isPersistentError = shouldResetConnection();
             
             if (isPersistentError && retryCount > 4) {
-              console.log(`🔄 Persistent connection error detected, resetting connection (attempt ${retryCount})...`);
+              logger.debug('🔄 Persistent connection error detected, resetting connection', { attempt: retryCount });
               await forceConnectionReset();
             } else {
-              console.log(`🔄 Attempting retry without connection reset (attempt ${retryCount})...`);
+              logger.debug('🔄 Attempting retry without connection reset', { attempt: retryCount });
               // Just wait a bit and retry without resetting connection
               await new Promise(resolve => setTimeout(resolve, 100 * retryCount)); // Slightly more backoff
             }
             
             continue; // Retry the operation
           } catch (resetError) {
-            console.error('Failed to handle connection error:', resetError);
+            logger.error('Failed to handle connection error', { error: resetError });
             throw error; // Throw the original error if handling fails
           }
         }

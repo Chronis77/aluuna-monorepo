@@ -32,8 +32,7 @@ export const authRouter = t.router({
           };
         }
 
-        // For now, we'll use a simple approach since Supabase handles auth
-        // In a real implementation, you'd verify the user through Supabase's auth
+        // Simple local auth validation; integrate with your chosen auth provider as needed
         logger.info('User found, login successful', { email, userId: user.id });
         
         // Generate a simple token (in production, use proper JWT)
@@ -126,7 +125,7 @@ export const authRouter = t.router({
           };
         }
 
-        // Create new user (password will be handled by Supabase auth)
+        // Create new user
         const newUser = await prisma.users.create({
           data: {
             email,
@@ -176,7 +175,7 @@ export const authRouter = t.router({
               };
             }
 
-            // Create new user (password will be handled by Supabase auth)
+            // Create new user
             const newUser = await prisma.users.create({
               data: {
                 email,
@@ -256,7 +255,7 @@ export const authRouter = t.router({
           };
         }
 
-        // Create new user (password will be handled by Supabase auth)
+        // Create new user
         const newUser = await prisma.users.create({
           data: {
             email,

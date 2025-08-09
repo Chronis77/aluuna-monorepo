@@ -32,6 +32,15 @@ export const voiceRouter = t.router({
       form.append('model', input.model ?? process.env['OPENAI_TRANSCRIBE_MODEL'] ?? 'whisper-1');
       form.append('response_format', 'json');
 
+      if (process.env.LOG_OPENAI === 'true') {
+        logger.warn('OpenAI whisper request (quick)', {
+          userId: input.user_id,
+          model: input.model ?? process.env['OPENAI_TRANSCRIBE_MODEL'] ?? 'whisper-1',
+          mimeType,
+          bytes: buffer.byteLength,
+        });
+      }
+
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           const resp = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -50,6 +59,12 @@ export const voiceRouter = t.router({
             throw new Error(errText);
           }
           const data = await resp.json();
+          if (process.env.LOG_OPENAI === 'true') {
+            logger.warn('OpenAI whisper response (quick)', {
+              userId: input.user_id,
+              textPreview: String(data.text || '').slice(0, 200),
+            });
+          }
           return { text: data.text || '' };
         } catch (e) {
           lastErr = e;

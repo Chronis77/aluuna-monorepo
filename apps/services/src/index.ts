@@ -13,8 +13,32 @@ import { prisma } from './db/client.js';
 import authRoutes from './routes/authRoutes.js';
 // import OpenAI from 'openai';
 import { extractTokenFromHeader, verifyToken } from './utils/authUtils.js';
+import { initQdrantFromEnv } from './vector/qdrant.js';
+import { setVectorStore } from './vector/vectorStore.js';
+import { getEmbeddingDimension } from './openai/embeddings.js';
+import { handleResponsesStreaming } from './ws/responsesStreaming.js';
+import { register as promRegister, httpRequestDurationMs } from './metrics/prom.js';
+import './jobs/queues.js';
 
 dotenv.config();
+
+// Confirm OpenAI logging setting at startup
+if (process.env.LOG_OPENAI === 'true') {
+  logger.warn('OpenAI I/O logging enabled', {
+    chatModel: process.env.OPENAI_CHAT_MODEL || 'gpt-4o',
+  });
+}
+
+// Initialize Qdrant vector store if configured
+const qdrantStore = initQdrantFromEnv();
+if (qdrantStore) {
+  setVectorStore(qdrantStore);
+  // Ensure collection exists with correct dimensions and cosine metric
+  const dim = getEmbeddingDimension();
+  qdrantStore.createCollectionIfMissing(dim, 'Cosine').catch(err => {
+    logger.error('Failed to ensure Qdrant collection', { err });
+  });
+}
 
 const app = express();
 const server = createServer(app);
@@ -24,9 +48,9 @@ const PORT = Number(process.env['PORT'] || 3000);
 const API_KEY = process.env['ALUUNA_APP_API_KEY'] || 'your-secret-api-key-here';
 
 // Initialize Socket.IO with CORS
-const io = new Server(server, {
+const io = new Server(server as any, {
   cors: {
-    origin: process.env['ALLOWED_ORIGINS']?.split(',') || ["*"],
+    origin: (process.env['ALLOWED_ORIGINS'] ? process.env['ALLOWED_ORIGINS'].split(',') : ["*"]) as any,
     methods: ["GET", "POST", "OPTIONS"],
     credentials: false,
     allowedHeaders: ["Content-Type", "Authorization", "x-api-key"]
@@ -89,7 +113,11 @@ app.use(express.urlencoded({ extended: true, limit: `${JSON_LIMIT_MB}mb` }));
 
 // Request logging middleware
 app.use((req, res, next) => {
-  logger.info(`📥 ${req.method} ${req.path} - ${req.ip}`);
+  const end = httpRequestDurationMs.startTimer({ method: req.method, route: req.path });
+  res.on('finish', () => {
+    try { end({ code: String(res.statusCode) }); } catch {}
+  });
+  logger.debug(`📥 ${req.method} ${req.path} - ${req.ip}`);
   next();
 });
 
@@ -115,8 +143,8 @@ const authenticateApiKey = (req: express.Request, res: express.Response, next: e
 };
 
 // Health check endpoint (no authentication required)
-app.get('/health', (req, res) => {
-  logger.info('Health check requested');
+app.get('/health', (_req, res) => {
+  logger.debug('Health check requested');
   res.setHeader('Content-Type', 'application/json');
   res.status(200).json({ 
     status: 'OK', 
@@ -130,6 +158,12 @@ app.get('/health', (req, res) => {
     },
     version: '2.0.0'
   });
+});
+
+// Prometheus metrics endpoint
+app.get('/metrics', async (_req, res) => {
+  res.set('Content-Type', promRegister.contentType);
+  res.end(await promRegister.metrics());
 });
 
 // Authentication routes (no API key required) with stricter limits
@@ -152,15 +186,15 @@ app.use('/api/trpc/:procedure', trpcLimiter, authenticateApiKey, async (req, res
     
     if (procedureParts.length === 1) {
       // Direct procedure call (e.g., "respond", "health")
-      const method = (caller as any)[procedureParts[0]];
+      const method = (caller as any)[procedureParts[0] as string];
       if (typeof method !== 'function') throw new Error(`Unknown procedure: ${procedure}`);
       result = await method(input);
     } else if (procedureParts.length === 2) {
       // Nested procedure call (e.g., "auth.getCurrentUser")
-      const [routerName, methodName] = procedureParts;
-      const router = (caller as any)[routerName];
+      const [routerName, methodName] = procedureParts as [string, string];
+      const router = (caller as any)[routerName as string];
       if (!router) throw new Error(`Unknown router: ${routerName}`);
-      const method = router[methodName];
+      const method = router[methodName as string];
       if (typeof method !== 'function') throw new Error(`Unknown procedure: ${procedure}`);
       result = await method(input);
     } else {
@@ -250,6 +284,41 @@ app.post('/api/voice/transcribe', trpcLimiter, authenticateApiKey, async (req, r
 io.on('connection', (socket) => {
   logger.info(`Client connected: ${socket.id}`);
 
+  // True streaming request compatible with mobile client
+  socket.on('true_streaming_request', async (request: any, callback: (resp: any) => void) => {
+    try {
+      callback?.({ success: true });
+      if (process.env.LOG_OPENAI === 'true') {
+        try {
+          const preview = {
+            hasUserMessage: typeof request?.userMessage === 'string',
+            userMessageLength: (request?.userMessage || '').length,
+            hasSystemPrompt: Boolean(request?.systemPrompt),
+            systemPromptEncoded: Boolean(request?.systemPromptEncoded),
+            conversationHistoryCount: Array.isArray(request?.conversationHistory) ? request.conversationHistory.length : 0,
+            temperature: request?.temperature,
+          };
+          logger.warn('WS true_streaming_request received', preview);
+        } catch {}
+      }
+      const messageId = request?.messageId;
+      if (messageId) {
+        try {
+          // Use native options signature
+          const dedupe = await (redis as any).set(`ws:msg:${messageId}`, '1', { EX: 600, NX: true });
+          if (dedupe === null) {
+            logger.info('Duplicate streaming request suppressed', { messageId });
+            return;
+          }
+        } catch {}
+      }
+      await handleResponsesStreaming(socket, request);
+    } catch (error: any) {
+      logger.error('true_streaming_request error', { error: error?.message });
+      socket.emit('true_streaming_message', { type: 'error', sessionId: request?.sessionId, messageId: request?.messageId, error: error?.message || 'Unknown error', timestamp: new Date().toISOString() });
+    }
+  });
+
   socket.on('disconnect', (reason) => {
     logger.info('Client disconnected', { socketId: socket.id, reason });
   });
@@ -270,21 +339,40 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-// Start server
-if (process.env.NODE_ENV !== 'production') {
+async function startServerWithDbBackoff() {
+  const maxAttempts = Number(process.env.DB_STARTUP_MAX_ATTEMPTS || 8);
+  const baseDelayMs = Number(process.env.DB_STARTUP_BASE_DELAY_MS || 500);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await prisma.$connect();
+      logger.info('✅ Database connection established');
+      break;
+    } catch (err) {
+      const delay = Math.min(10000, baseDelayMs * Math.pow(2, attempt - 1));
+      logger.warn('Database connection failed, retrying', { attempt, maxAttempts, delayMs: delay });
+      if (attempt === maxAttempts) {
+        logger.error('Failed to connect to database after retries, starting server anyway');
+      } else {
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+    }
+  }
+
   server.listen(PORT, '0.0.0.0', () => {
-    logger.info(`🚀 Aluuna Services Server running on port ${PORT}`);
-    logger.info(`📡 Health check: http://localhost:${PORT}/health`);
-    logger.info(`🔌 WebSocket: ws://localhost:${PORT}`);
-    logger.info(`🌐 Server bound to all interfaces (IPv4 & IPv6)`);
-    logger.info(`🔑 API Key required for protected endpoints`);
-  });
-} else {
-  // For Railway production - ensure server is listening
-  server.listen(PORT, '0.0.0.0', () => {
-    logger.info(`🚀 Aluuna Services Server running on Railway port ${PORT}`);
-    logger.info(`🔌 WebSocket server active`);
+    const envLabel = process.env.NODE_ENV !== 'production' ? 'port' : 'Railway port';
+    logger.info(`🚀 Aluuna Services Server running on ${envLabel} ${PORT}`);
+    logger.debug(`📡 Health check: http://localhost:${PORT}/health`);
+    logger.debug(`🔌 WebSocket: ws://localhost:${PORT}`);
+    logger.debug(`🌐 Server bound to all interfaces (IPv4 & IPv6)`);
+    logger.debug(`🔑 API Key required for protected endpoints`);
   });
 }
+
+// Start server with DB backoff
+startServerWithDbBackoff().catch((e) => {
+  logger.error('Fatal startup error', { error: e });
+  process.exit(1);
+});
 
 export { app, server, io }; 

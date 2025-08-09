@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/index.ts",
-    "build": "bun build src/index.ts --outfile dist/index.js --target node",
+    "build": "bun build src/index.ts --outfile dist/index.js --target node --external bullmq --external prom-client",
     "start": "bun run dist/index.js",
     "clean": "rm -rf dist",
     "postinstall": "bunx prisma generate && bun run build",
@@ -14,11 +14,14 @@
     "migrate:help": "bun run scripts/migrate-to-railway.ts help"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.627.0",
+    "@aws-sdk/s3-request-presigner": "^3.627.0",
     "@google-cloud/text-to-speech": "^5.0.0",
     "@prisma/client": "^5.10.0",
     "@trpc/client": "^11.0.0",
     "@trpc/server": "^11.0.0",
     "bcryptjs": "^2.4.3",
+    "bullmq": "^5.22.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
@@ -27,14 +30,14 @@
     "jose": "^6.0.12",
     "jsonwebtoken": "^9.0.2",
     "openai": "^4.20.1",
-    "@aws-sdk/client-s3": "^3.627.0",
-    "@aws-sdk/s3-request-presigner": "^3.627.0",
     "pg": "^8.11.3",
+    "prom-client": "^15.1.0",
     "redis": "^4.6.0",
     "socket.io": "^4.7.4",
     "winston": "^3.11.0",
     "zod": "^3.22.0",
-    "zod-prisma-types": "^2.8.0"
+    "zod-prisma-types": "^2.8.0",
+    "zod-to-json-schema": "^3.24.6"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

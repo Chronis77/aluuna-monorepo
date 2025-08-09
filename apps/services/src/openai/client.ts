@@ -2,20 +2,38 @@ import OpenAI from 'openai';
 import { logger } from '../utils/logger.js';
 import { tools, handleToolCall } from '../tools/index.js';
 import { GPTResponse, GPTResponseSchema } from '../schemas/index.js';
+import { buildMCP } from '../mcp/buildMCP.js';
+import { buildSystemPrompt } from './prompt.js';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o';
+
 export async function generateResponse(
   userInput: string,
-  mcpContext: string,
+  mcpOrContext: string | { userId: string; flags?: Record<string, any> },
   userId: string,
   mode?: string
 ): Promise<GPTResponse> {
-  logger.info('Generating OpenAI response', { userId, mode });
-
-  const systemPrompt = buildSystemPrompt(mcpContext, mode);
+  logger.debug?.('Generating OpenAI response', { userId, mode });
+  // Build MCP if needed
+  const mcp = typeof mcpOrContext === 'string'
+    ? null
+    : await buildMCP(mcpOrContext.userId, mcpOrContext.flags);
+  const systemPrompt = mcp
+    ? buildSystemPrompt(mcp, mode)
+    : buildSystemPrompt({
+        userId,
+        profileSummary: null,
+        innerParts: [],
+        insights: [],
+        emotionalTrends: [],
+        recentSessions: [],
+        currentContext: {},
+      }, mode);
   
   const messages = [
     { role: 'system' as const, content: systemPrompt },
@@ -23,10 +41,49 @@ export async function generateResponse(
   ];
 
   try {
+    if (process.env.LOG_OPENAI === 'true') {
+      logger.warn('OpenAI generateResponse preflight', {
+        userId,
+        mode,
+        systemPromptLength: systemPrompt.length,
+        userInputLength: userInput.length,
+      });
+    }
+    if (process.env.LOG_OPENAI === 'true') {
+      const requestPayload = {
+        model: CHAT_MODEL,
+        messages,
+        tools,
+        tool_choice: 'auto' as const,
+        temperature: 0.3,
+        max_tokens: 2000,
+      };
+      logger.warn('OpenAI request', {
+        userId,
+        mode,
+        payload: JSON.parse(JSON.stringify(requestPayload)),
+      });
+    }
+
+    // Convert tools to OpenAI-compatible JSON Schema format
+    const openAITools = tools.map((tool: any) => {
+      if (tool.type === 'function') {
+        return {
+          type: 'function' as const,
+          function: {
+            name: tool.function.name,
+            description: tool.function.description,
+            parameters: zodToJsonSchema(tool.function.parameters, { target: 'openApi3' })
+          }
+        };
+      }
+      return tool;
+    });
+
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: CHAT_MODEL,
       messages,
-      tools,
+      tools: openAITools,
       tool_choice: 'auto',
       temperature: 0.3,
       max_tokens: 2000,
@@ -40,7 +97,7 @@ export async function generateResponse(
 
     // Handle tool calls if any
     if (response.tool_calls && response.tool_calls.length > 0) {
-      logger.info('Processing tool calls', { count: response.tool_calls.length });
+      logger.debug?.('Processing tool calls', { count: response.tool_calls.length });
       
       const toolResults = await Promise.all(
         response.tool_calls.map(async (toolCall) => {
@@ -60,14 +117,36 @@ export async function generateResponse(
         ...toolResults
       ];
 
+      if (process.env.LOG_OPENAI === 'true') {
+        const postToolsPayload = {
+          model: CHAT_MODEL,
+          messages: messagesWithTools,
+          temperature: 0.3,
+          max_tokens: 2000,
+        };
+        logger.warn('OpenAI request (post-tools)', {
+          userId,
+          mode,
+          payload: JSON.parse(JSON.stringify(postToolsPayload)),
+        });
+      }
+
       const finalCompletion = await openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: CHAT_MODEL,
         messages: messagesWithTools,
         temperature: 0.3,
         max_tokens: 2000,
       });
 
       const finalResponse = finalCompletion.choices[0]?.message?.content;
+      if (process.env.LOG_OPENAI === 'true') {
+        const safeFinal = JSON.parse(JSON.stringify(finalCompletion));
+        logger.warn('OpenAI response (post-tools)', {
+          userId,
+          mode,
+          response: safeFinal,
+        });
+      }
       
       if (!finalResponse) {
         throw new Error('No final response from OpenAI after tool calls');
@@ -85,7 +164,7 @@ export async function generateResponse(
     }
 
     // No tool calls, return direct response
-    return GPTResponseSchema.parse({
+    const parsed = GPTResponseSchema.parse({
       gpt_response: response.content || '',
       insights: extractInsights(response.content || ''),
       metadata: {
@@ -94,6 +173,16 @@ export async function generateResponse(
         userId
       }
     });
+    if (process.env.LOG_OPENAI === 'true') {
+      const safeCompletion = JSON.parse(JSON.stringify(completion));
+      logger.warn('OpenAI response', {
+        userId,
+        mode,
+        response: safeCompletion,
+      });
+      logger.warn('OpenAI parsed response', parsed);
+    }
+    return parsed;
 
   } catch (error) {
     logger.error('OpenAI API error', { error, userId });

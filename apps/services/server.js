@@ -149,7 +149,11 @@ io.on('connection', (socket) => {
         conversationHistoryLength: request.conversationHistory?.length
       });
       
-            const {
+      // Import the modern streaming handler with function calling
+      const { handleResponsesStreaming } = await import('./src/ws/responsesStreaming.js');
+      
+      // Extract essential data from the legacy request format
+      const {
         userMessage,
         sessionContext,
         conversationHistory,
@@ -160,287 +164,31 @@ io.on('connection', (socket) => {
         temperature = 0.3
       } = request;
       
-      // Decode the system prompt if it's encoded
-      let decryptedSystemPrompt = systemPrompt;
-      if (systemPromptEncoded) {
-        try {
-          decryptedSystemPrompt = decodeURIComponent(escape(atob(systemPrompt)));
-          console.log('🔍 SERVER: Successfully decoded Base64 system prompt');
-        } catch (error) {
-          console.error('🔍 SERVER: Error decoding system prompt:', error);
-          decryptedSystemPrompt = systemPrompt; // Fallback to original
-        }
-      }
-
-      // Log what we received from the client
-      console.log('🔍 SERVER: Received request from client:');
-      console.log('🔍 SERVER: userMessage:', userMessage);
-      console.log('🔍 SERVER: sessionId:', sessionId);
-      console.log('🔍 SERVER: messageId:', messageId);
-      console.log('🔍 SERVER: systemPromptEncoded:', systemPromptEncoded);
-      console.log('🔍 SERVER: original systemPrompt length:', systemPrompt?.length);
-      console.log('🔍 SERVER: decrypted systemPrompt length:', decryptedSystemPrompt?.length);
-      console.log('🔍 SERVER: systemPrompt contains "CRITICAL":', decryptedSystemPrompt?.includes('CRITICAL'));
-      console.log('🔍 SERVER: systemPrompt contains "METADATA_START":', decryptedSystemPrompt?.includes('METADATA_START'));
-      console.log('🔍 SERVER: conversationHistory length:', conversationHistory?.length);
-      console.log('🔍 SERVER: temperature:', temperature);
-      
-      // Log the COMPLETE system prompt
-      console.log('🔍 SERVER: COMPLETE SYSTEM PROMPT:');
-      console.log('---START OF SYSTEM PROMPT---');
-      console.log(decryptedSystemPrompt);
-      console.log('---END OF SYSTEM PROMPT---');
-      
-      logger.info('True streaming request received', { sessionId, messageId, socketId: socket.id });
-      
-      // Send acknowledgment
+      // Send acknowledgment immediately
       callback({ success: true });
       
-      // Send start message immediately
-      socket.emit('true_streaming_message', {
-        type: 'start',
+      // Convert legacy request to modern format
+      const modernRequest = {
+        userId: sessionContext?.userId || sessionContext?.userProfile?.user_id || 'default-user-id',
+        userMessage,
         sessionId,
         messageId,
-        timestamp: new Date().toISOString()
-      });
-
-      // Create abort controller for this stream
-      const abortController = new AbortController();
-      activeStreams.set(messageId, { socket, abortController });
+        conversationHistory: conversationHistory || [],
+        currentContext: sessionContext || {},
+        mode: undefined, // Let the system auto-detect mode
+        temperature
+      };
       
-      // Set timeout to abort if response takes too long (2 minutes)
-      const timeoutId = setTimeout(() => {
-        logger.warn('True stream timeout', { messageId });
-        abortController.abort();
-      }, 120000); // 2 minutes
-
-      // Prepare messages for OpenAI
-      const messages = [
-        { role: 'system', content: decryptedSystemPrompt },
-        ...conversationHistory,
-        { role: 'user', content: userMessage }
-      ];
-
-      // Log what we're sending to OpenAI
-      console.log('🔍 SERVER: Sending to OpenAI:');
-      console.log('🔍 SERVER: Messages count:', messages.length);
-      console.log('🔍 SERVER: System message length:', messages[0]?.content?.length);
-      console.log('🔍 SERVER: System message starts with:', messages[0]?.content?.substring(0, 100));
-      console.log('🔍 SERVER: System message contains "CRITICAL":', messages[0]?.content?.includes('CRITICAL'));
-      console.log('🔍 SERVER: System message contains "METADATA_START":', messages[0]?.content?.includes('METADATA_START'));
-      console.log('🔍 SERVER: User message:', messages[messages.length - 1]?.content);
-      console.log('🔍 SERVER: Temperature:', temperature);
-
-      const startTime = Date.now();
+      // Use the modern streaming handler with function calling
+      await handleResponsesStreaming(socket, modernRequest);
       
-      // Use fetch with stream: true for true streaming
-      let response;
-      try {
-        response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o',
-            messages,
-            temperature,
-            stream: true,
-            presence_penalty: 0.1,
-            frequency_penalty: 0.1,
-          }),
-          signal: abortController.signal
-        });
-      } catch (fetchError) {
-        logger.error('OpenAI API fetch error', { 
-          error: fetchError.message, 
-          type: fetchError.constructor.name,
-          code: fetchError.code 
-        });
-        throw fetchError;
-      }
-
-      const fetchEndTime = Date.now();
-      const fetchDuration = fetchEndTime - startTime;
-
-      if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
-      }
-
-      // Get the reader for true streaming with better error handling
-      let reader;
-      try {
-        console.log('🔍 Server attempting to get response reader...');
-        reader = response.body.getReader();
-        console.log('🔍 Server successfully got response reader');
-      } catch (error) {
-        console.error('❌ Server failed to get response reader:', error.message);
-        logger.error('Failed to get response reader, falling back to text()', { error: error.message });
-        
-        // Fallback: use response.text() instead of streaming
-        const responseText = await response.text();
-        const lines = responseText.split('\n');
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            
-            if (data === '[DONE]') {
-              // Send completion message
-              socket.emit('true_streaming_message', {
-                type: 'done',
-                sessionId,
-                messageId,
-                totalChunks: chunkCount,
-                timestamp: new Date().toISOString()
-              });
-              return;
-            }
-
-            try {
-              const parsed = JSON.parse(data);
-              const content = parsed.choices[0]?.delta?.content;
-              
-              if (content) {
-                chunkCount++;
-                
-                // Send token immediately to client
-                socket.emit('true_streaming_message', {
-                  type: 'token',
-                  sessionId,
-                  messageId,
-                  token: content,
-                  chunkIndex: chunkCount,
-                  timestamp: new Date().toISOString()
-                });
-              }
-            } catch (parseError) {
-              // Skip malformed JSON
-              logger.debug('Skipping malformed JSON chunk', { data });
-            }
-          }
-        }
-        
-        // Send completion message
-        console.log('🔍 SERVER: Stream completed, total chunks:', chunkCount);
-        
-        // Log the COMPLETE AI response
-        console.log('🔍 SERVER: COMPLETE AI RESPONSE:');
-        console.log('---START OF AI RESPONSE---');
-        console.log(completeResponse);
-        console.log('---END OF AI RESPONSE---');
-        console.log('🔍 SERVER: Response contains delimiter:', completeResponse.includes('===METADATA_START==='));
-        
-        socket.emit('true_streaming_message', {
-          type: 'done',
-          sessionId,
-          messageId,
-          totalChunks: chunkCount,
-          timestamp: new Date().toISOString()
-        });
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let chunkCount = 0;
-      let completeResponse = ''; // Track the complete response
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          if (done) {
-            break;
-          }
-
-          // Decode the chunk and add to buffer
-          const chunk = decoder.decode(value, { stream: true });
-          buffer += chunk;
-
-          // Process complete lines
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              
-              if (data === '[DONE]') {
-                console.log('🔍 SERVER: Stream completed, total chunks:', chunkCount);
-                
-                // Log the COMPLETE AI response
-                console.log('🔍 SERVER: COMPLETE AI RESPONSE:');
-                console.log('---START OF AI RESPONSE---');
-                console.log(completeResponse);
-                console.log('---END OF AI RESPONSE---');
-                console.log('🔍 SERVER: Response contains delimiter:', completeResponse.includes('===METADATA_START==='));
-                
-                socket.emit('true_streaming_message', {
-                  type: 'done',
-                  sessionId,
-                  messageId,
-                  totalChunks: chunkCount,
-                  timestamp: new Date().toISOString()
-                });
-                return;
-              }
-
-              try {
-                const parsed = JSON.parse(data);
-                const content = parsed.choices[0]?.delta?.content;
-                
-                if (content) {
-                  chunkCount++;
-                  completeResponse += content; // Build complete response
-                  
-                  // Log only delimiter-related tokens
-                  if (content.includes('===') || content.includes('METADATA') || content.includes('START')) {
-                    console.log('🔍 SERVER: DELIMITER TOKEN DETECTED:', JSON.stringify(content));
-                  }
-                  
-                  // Send token directly to client (no encryption for streaming)
-                  socket.emit('true_streaming_message', {
-                    type: 'token',
-                    sessionId,
-                    messageId,
-                    token: content,
-                    chunkIndex: chunkCount,
-                    timestamp: new Date().toISOString()
-                  });
-                }
-              } catch (parseError) {
-                logger.debug('Skipping malformed JSON chunk', { data });
-              }
-            }
-          }
-        }
-      } finally {
-        if (reader) {
-          reader.releaseLock();
-        }
-      }
-
-      // Clean up
-      clearTimeout(timeoutId);
-      activeStreams.delete(messageId);
-
-      logger.info('True streaming completed', { 
-        messageId, 
-        sessionId, 
-        totalChunks: chunkCount
-      });
-
+      return; // Exit early to avoid the old implementation
     } catch (error) {
-      logger.error('Error in true streaming request', { 
+      logger.error('Error in function calling streaming request', { 
         error: error.message, 
         messageId: request.messageId,
         socketId: socket.id 
       });
-      
-      // Clean up on error
-      activeStreams.delete(request.messageId);
       
       socket.emit('true_streaming_message', {
         type: 'error',

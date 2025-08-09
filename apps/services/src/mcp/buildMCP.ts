@@ -1,9 +1,8 @@
 import { prisma } from '../db/client.js';
 import { cache } from '../cache/redis.js';
 import { logger } from '../utils/logger.js';
-import { MCP, MCPSchema } from '../schemas/index.js';
+import { MCP, MCPSchema } from './types.js';
 import { withArrayFallback, withNullFallback } from '../utils/connectionUtils.js';
-import { fromJsonbArray } from '../utils/jsonbUtils.js';
 
 export async function buildMCP(userId: string, flags?: Record<string, any>): Promise<MCP> {
   const cacheKey = `mcp:${userId}`;
@@ -20,53 +19,53 @@ export async function buildMCP(userId: string, flags?: Record<string, any>): Pro
   try {
     // Fetch all data in parallel with connection error handling
     const [
-      memoryProfileResult,
+      userProfileSummaryResult,
       innerPartsResult,
       insightsResult,
       emotionalTrendsResult,
       recentSessionsResult
     ] = await Promise.all([
-      // Get memory profile
+      // User profile summary
       withNullFallback(
-        () => prisma.memory_profiles.findUnique({
+        () => prisma.user_profile_summary.findUnique({
           where: { user_id: userId }
         }),
-        'memory_profile'
+        'user_profile_summary'
       ),
-      
-      // Get inner parts (limit to recent ones)
+
+      // Inner parts
       withArrayFallback(
-        () => prisma.inner_parts.findMany({
+        () => prisma.user_inner_parts.findMany({
           where: { user_id: userId },
           orderBy: { updated_at: 'desc' },
-          take: 10
+          take: 15
         }),
-        'inner_parts'
+        'user_inner_parts'
       ),
-      
-      // Get recent insights
+
+      // Insights
       withArrayFallback(
-        () => prisma.insights.findMany({
+        () => prisma.user_insights.findMany({
           where: { user_id: userId },
           orderBy: { created_at: 'desc' },
-          take: 20
+          take: 30
         }),
-        'insights'
+        'user_insights'
       ),
-      
-      // Get recent emotional trends
+
+      // Emotional trends
       withArrayFallback(
-        () => prisma.emotional_trends.findMany({
+        () => prisma.user_emotional_trends.findMany({
           where: { user_id: userId },
           orderBy: { recorded_at: 'desc' },
           take: 30
         }),
-        'emotional_trends'
+        'user_emotional_trends'
       ),
-      
-      // Get recent sessions
+
+      // Recent sessions/messages
       withArrayFallback(
-        () => prisma.conversation_messages.findMany({
+        () => prisma.user_conversation_messages.findMany({
           where: { user_id: userId },
           orderBy: { created_at: 'desc' },
           take: 5,
@@ -75,29 +74,70 @@ export async function buildMCP(userId: string, flags?: Record<string, any>): Pro
             input_type: true,
             summary: true,
             mood_at_time: true,
-            created_at: true
-          }
+            created_at: true,
+          },
         }),
         'recent_sessions'
-      )
+      ),
     ]);
 
     // Extract data from results
-    const memoryProfile = memoryProfileResult.data;
-    const innerParts = innerPartsResult.data || [];
-    const insights = insightsResult.data || [];
-    const emotionalTrends = emotionalTrendsResult.data || [];
-    const recentSessions = recentSessionsResult.data || [];
+    const profileSummary = userProfileSummaryResult.data
+      ? {
+          user_id: userId,
+          suicidal_risk_level: userProfileSummaryResult.data.suicidal_risk_level ?? null,
+          sleep_quality: userProfileSummaryResult.data.sleep_quality ?? null,
+          biggest_challenge: userProfileSummaryResult.data.biggest_challenge ?? null,
+          biggest_obstacle: userProfileSummaryResult.data.biggest_obstacle ?? null,
+          motivation_for_joining: userProfileSummaryResult.data.motivation_for_joining ?? null,
+          hopes_to_achieve: userProfileSummaryResult.data.hopes_to_achieve ?? null,
+          mood_score_initial: userProfileSummaryResult.data.mood_score_initial ?? null,
+          updated_at: userProfileSummaryResult.data.updated_at ?? undefined,
+        }
+      : null;
+
+    const innerParts = (innerPartsResult.data || []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      role: p.role,
+      tone: p.tone,
+      description: p.description,
+      updated_at: p.updated_at ?? undefined,
+    }));
+
+    const insights = (insightsResult.data || []).map((i: any) => ({
+      id: i.id,
+      text: i.insight_text,
+      related_theme: i.related_theme,
+      importance: i.importance,
+      created_at: i.created_at ?? undefined,
+    }));
+
+    const emotionalTrends = (emotionalTrendsResult.data || []).map((t: any) => ({
+      id: t.id,
+      recorded_at: t.recorded_at,
+      mood_score: t.mood_score,
+      mood_label: t.mood_label,
+      notes: t.notes,
+    }));
+
+    const recentSessions = (recentSessionsResult.data || []).map((s: any) => ({
+      id: s.id,
+      type: s.input_type,
+      summary: s.summary,
+      mood_at_time: s.mood_at_time,
+      created_at: s.created_at,
+    }));
 
     // Build MCP object
     const mcp: MCP = {
       userId,
-      memoryProfile,
+      profileSummary,
       innerParts,
       insights,
       emotionalTrends,
       recentSessions,
-      currentContext: flags || {}
+      currentContext: flags || {},
     };
 
     // Validate MCP with Zod schema
@@ -108,7 +148,7 @@ export async function buildMCP(userId: string, flags?: Record<string, any>): Pro
 
     logger.info('MCP built and cached successfully', { 
       userId, 
-      memoryProfile: !!memoryProfile,
+      hasProfileSummary: !!profileSummary,
       innerPartsCount: innerParts.length,
       insightsCount: insights.length,
       emotionalTrendsCount: emotionalTrends.length,
@@ -122,92 +162,4 @@ export async function buildMCP(userId: string, flags?: Record<string, any>): Pro
     throw new Error(`Failed to build MCP for user ${userId}: ${error}`);
   }
 }
-
-export function formatMCPForOpenAI(mcp: MCP): string {
-  const sections = [];
-
-  // Memory Profile Section
-  if (mcp.memoryProfile) {
-    sections.push(`## MEMORY PROFILE
-Name: ${mcp.memoryProfile.name || 'Not specified'}
-Age: ${mcp.memoryProfile.age || 'Not specified'}
-Occupation: ${mcp.memoryProfile.occupation || 'Not specified'}
-Location: ${mcp.memoryProfile.location || 'Not specified'}
-
-Long-term Memory: ${mcp.memoryProfile.long_term_memory || 'No long-term memory recorded'}
-
-Current Context: ${mcp.memoryProfile.current_context || 'No current context recorded'}
-
-Emotional State: ${mcp.memoryProfile.emotional_state || 'No emotional state recorded'}
-
-Recent Events: ${mcp.memoryProfile.recent_events || 'No recent events recorded'}
-
-Goals: ${mcp.memoryProfile.goals || 'No goals recorded'}
-
-Challenges: ${mcp.memoryProfile.challenges || 'No challenges recorded'}
-
-Coping Strategies: ${mcp.memoryProfile.coping_strategies || 'No coping strategies recorded'}
-
-Support Network: ${mcp.memoryProfile.support_network || 'No support network recorded'}
-
-Triggers: ${mcp.memoryProfile.triggers || 'No triggers recorded'}
-
-Patterns: ${mcp.memoryProfile.patterns || 'No patterns recorded'}
-
-Progress Notes: ${mcp.memoryProfile.progress_notes || 'No progress notes recorded'}
-
-Therapeutic Focus: ${mcp.memoryProfile.therapeutic_focus || 'No therapeutic focus recorded'}`);
-  }
-
-  // Inner Parts Section
-  if (mcp.innerParts.length > 0) {
-    const innerPartsText = mcp.innerParts.map(part => 
-      `- ${part.name} (${part.role}): ${part.description} [Tone: ${part.tone}]`
-    ).join('\n');
-    
-    sections.push(`## INNER PARTS
-${innerPartsText}`);
-  }
-
-  // Recent Insights Section
-  if (mcp.insights.length > 0) {
-    const insightsText = mcp.insights.map(insight => 
-      `- ${insight.insight}${insight.category ? ` [${insight.category}]` : ''}`
-    ).join('\n');
-    
-    sections.push(`## RECENT INSIGHTS
-${insightsText}`);
-  }
-
-  // Emotional Trends Section
-  if (mcp.emotionalTrends.length > 0) {
-    const trendsText = mcp.emotionalTrends.slice(0, 10).map(trend => 
-      `- ${trend.created_at.toISOString().split('T')[0]}: Score ${trend.mood_score}${trend.emotional_state ? ` (${trend.emotional_state})` : ''}${trend.notes ? ` - ${trend.notes}` : ''}`
-    ).join('\n');
-    
-    sections.push(`## EMOTIONAL TRENDS (Last 10)
-${trendsText}`);
-  }
-
-  // Recent Sessions Section
-  if (mcp.recentSessions.length > 0) {
-    const sessionsText = mcp.recentSessions.map(session => 
-      `- ${session.created_at.toISOString().split('T')[0]}: ${session.type || 'Session'}${session.mood_score ? ` (Mood: ${session.mood_score})` : ''}${session.summary ? ` - ${session.summary.substring(0, 100)}...` : ''}`
-    ).join('\n');
-    
-    sections.push(`## RECENT SESSIONS
-${sessionsText}`);
-  }
-
-  // Current Context Section
-  if (mcp.currentContext && Object.keys(mcp.currentContext).length > 0) {
-    const contextText = Object.entries(mcp.currentContext)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join('\n');
-    
-    sections.push(`## CURRENT CONTEXT
-${contextText}`);
-  }
-
-  return sections.join('\n\n');
-} 
+// Formatter moved to ./formatter.ts to keep responsibilities separate

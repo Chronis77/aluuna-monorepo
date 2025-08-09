@@ -12,15 +12,15 @@ redis.on('error', (err) => {
 });
 
 redis.on('connect', () => {
-  logger.info('Redis Client Connected');
+  logger.debug('Redis Client Connected');
 });
 
 redis.on('ready', () => {
-  logger.info('Redis Client Ready');
+  logger.debug('Redis Client Ready');
 });
 
 redis.on('end', () => {
-  logger.info('Redis Client Disconnected');
+  logger.debug('Redis Client Disconnected');
 });
 
 // Connect to Redis

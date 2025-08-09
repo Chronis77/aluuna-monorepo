@@ -12,34 +12,14 @@ export function formatDatabaseUrl(): string {
   }
   
   try {
-    // Handle malformed URLs with double question marks
-    let cleanUrl = baseUrl;
-    if (cleanUrl.includes('??')) {
-      cleanUrl = cleanUrl.replace('??', '?');
+    const url = new URL(baseUrl);
+    // Ensure SSL is required for external providers like Railway
+    if (url.searchParams.get('sslmode')?.toLowerCase() !== 'require') {
+      url.searchParams.set('sslmode', 'require');
+      logger.debug('Applied sslmode=require to DATABASE_URL');
     }
-    if (cleanUrl.includes('?pgbouncer=true?sslmode=')) {
-      cleanUrl = cleanUrl.replace('?pgbouncer=true?sslmode=', '?pgbouncer=true&sslmode=');
-    }
-    
-    // Parse the cleaned URL
-    const url = new URL(cleanUrl);
-    
-    // Remove pgbouncer=true to enable prepared statements for better performance
-    if (url.searchParams.has('pgbouncer')) {
-      url.searchParams.delete('pgbouncer');
-      logger.info('Removed pgbouncer=true to enable prepared statements for better performance');
-    }
-    
     const formattedUrl = url.toString();
-    
-    logger.info('Formatted DATABASE_URL', {
-      originalLength: baseUrl.length,
-      formattedLength: formattedUrl.length,
-      hasPgbouncer: url.searchParams.has('pgbouncer'),
-      pgbouncerValue: url.searchParams.get('pgbouncer') || null,
-      note: 'Prepared statements enabled for better performance'
-    });
-    
+    logger.debug('Formatted DATABASE_URL');
     return formattedUrl;
   } catch (error: any) {
     logger.error('Error formatting DATABASE_URL', { error: error.message, baseUrl });
@@ -68,11 +48,6 @@ export function validateConnectionString(url: string): boolean {
     if (!parsedUrl.pathname || parsedUrl.pathname === '/') {
       logger.error('Missing database name');
       return false;
-    }
-    
-    // Check for pgbouncer parameter
-    if (!parsedUrl.searchParams.has('pgbouncer')) {
-      logger.warn('pgbouncer=true parameter not found');
     }
     
     return true;

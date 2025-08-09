@@ -7,7 +7,7 @@ import { logger } from '../utils/logger.js';
 export function validateDatabaseUrl(): void {
   const databaseUrl = process.env['DATABASE_URL'];
   
-  logger.info('Environment check:', {
+  logger.debug('Environment check:', {
     hasDatabaseUrl: !!databaseUrl,
     databaseUrlLength: databaseUrl?.length,
     nodeEnv: process.env.NODE_ENV,
@@ -23,22 +23,14 @@ export function validateDatabaseUrl(): void {
     // Basic validation - check if it's a valid URL
     const url = new URL(databaseUrl);
     
-    logger.info('Database URL validation:', {
+    logger.debug('Database URL validation:', {
       protocol: url.protocol,
       hostname: url.hostname,
       port: url.port,
       pathname: url.pathname,
       searchParams: Object.fromEntries(url.searchParams.entries()),
-      hasPgbouncer: url.searchParams.has('pgbouncer'),
-      pgbouncerValue: url.searchParams.get('pgbouncer'),
-      note: 'Supabase now uses Supavisor instead of PgBouncer',
       fullUrl: getSanitizedDatabaseUrl()
     });
-    
-    // Check for common issues
-    if (url.port !== '6543') {
-      logger.warn('DATABASE_URL port is not 6543 (Supabase Supavisor pooler port)');
-    }
     
     // Check for unescaped special characters in password
     const password = url.password;

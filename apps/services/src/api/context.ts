@@ -3,20 +3,21 @@ import { CreateExpressContextOptions } from '@trpc/server/adapters/express';
 import { prisma } from '../db/client.js';
 import { redis } from '../cache/redis.js';
 import { verifyToken, extractTokenFromHeader } from '../utils/authUtils.js';
+import { logger } from '../utils/logger.js';
 
 export async function createContext({ req, res }: CreateExpressContextOptions) {
   let user = null;
   
   try {
-    console.log('🔐 Context: Authorization header:', req.headers.authorization ? 'Present' : 'Missing');
+    logger.debug('🔐 Context: Authorization header check', { present: Boolean(req.headers.authorization) });
     const token = extractTokenFromHeader(req.headers.authorization);
-    console.log('🔐 Context: Token extracted:', token ? 'Yes' : 'No');
+    logger.debug('🔐 Context: Token extracted', { present: Boolean(token) });
     
     if (token) {
       const decoded = verifyToken(token);
-      console.log('🔐 Context: Token verified:', decoded ? 'Yes' : 'No');
+      logger.debug('🔐 Context: Token verified', { verified: Boolean(decoded) });
       if (decoded) {
-        console.log('🔐 Context: User ID from token:', decoded.userId);
+        logger.debug('🔐 Context: User ID from token', { userId: decoded.userId });
         user = await prisma.users.findUnique({
           where: { id: decoded.userId },
           select: {
@@ -28,11 +29,11 @@ export async function createContext({ req, res }: CreateExpressContextOptions) {
             updated_at: true,
           },
         });
-        console.log('🔐 Context: User found in DB:', user ? 'Yes' : 'No');
+        logger.debug('🔐 Context: User found in DB', { found: Boolean(user) });
       }
     }
   } catch (error) {
-    console.error('Error extracting user from token:', error);
+    logger.error('Error extracting user from token', { error });
     // Don't throw error, just continue without user
   }
 

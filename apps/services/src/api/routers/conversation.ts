@@ -269,6 +269,147 @@ export const conversationRouter = t.router({
       }
     }),
 
+  // Title & Summary generation (server-side, persists to conversation)
+  generateTitleAndSummary: t.procedure
+    .input(z.object({
+      user_id: z.string(),
+      conversation_id: z.string().optional(),
+      messages: z.array(z.object({ role: z.enum(['user','assistant']), content: z.string() })).optional(),
+      max_chars: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { user_id, conversation_id, messages, max_chars = 12000 } = input;
+      try {
+        // Gather messages either from DB by conversation_id or from provided list
+        let history: Array<{ role: 'user'|'assistant'; content: string }> = [];
+        if (conversation_id) {
+          const rows = await prisma.user_conversation_messages.findMany({
+            where: { user_id, conversation_id },
+            orderBy: { created_at: 'asc' },
+            select: { input_type: true, input_transcript: true, gpt_response: true },
+          });
+          for (const r of rows) {
+            if (r.input_type === 'user' && r.input_transcript) history.push({ role: 'user', content: r.input_transcript });
+            if (r.input_type === 'assistant' && r.gpt_response) history.push({ role: 'assistant', content: r.gpt_response });
+          }
+        } else if (Array.isArray(messages)) {
+          history = messages.filter(m => m && (m.role === 'user' || m.role === 'assistant')) as any;
+        }
+
+        // Adjacent dedupe
+        const deduped: typeof history = [];
+        for (const m of history) {
+          const last = deduped[deduped.length - 1];
+          if (!last || last.role !== m.role || last.content !== m.content) {
+            deduped.push(m);
+          }
+        }
+
+        // Build transcript text with cap
+        const transcript = deduped
+          .map(m => `${m.role}: ${m.content}`)
+          .join('\n')
+          .slice(0, max_chars);
+
+        // Add logging to debug the issue
+        logger.info('Title generation input', { 
+          conversation_id, 
+          historyLength: history.length, 
+          dedupedLength: deduped.length,
+          transcriptPreview: transcript.slice(0, 200) + '...'
+        });
+
+        // Prepare prompts - make them more explicit to prevent hallucination
+        const titleSystem = 'You must create a title based ONLY on the conversation provided. Read the conversation carefully and create a 3-5 word title that reflects the actual content discussed. Return ONLY the title in Title Case, no punctuation, no quotes, no extra text.';
+        const titleUser = `Based on this EXACT conversation below, create a 3-5 word title that reflects what was actually discussed:\n\n${transcript}\n\nTitle:`;
+
+        const summarySystem = 'You must summarize ONLY the conversation provided. Read carefully and write a 1-2 sentence summary (max 45 words) that reflects the actual content discussed. Start directly with the content, no preambles like "In this session". Be accurate to what was actually said.';
+        const summaryUser = `Summarize this EXACT conversation in 1-2 sentences (max 45 words). Base your summary only on what was actually discussed:\n\n${transcript}\n\nSummary:`;
+
+        const model = process.env['OPENAI_CHAT_MODEL'] || 'gpt-4o';
+
+        // Call OpenAI sequentially for clarity
+        const titlePayload = { model, temperature: 0.2, messages: [ { role: 'system', content: titleSystem }, { role: 'user', content: titleUser } ]};
+        
+        logger.info('Sending title request to OpenAI', { 
+          model, 
+          systemPrompt: titleSystem,
+          userPromptPreview: titleUser.slice(0, 100) + '...'
+        });
+        
+        const titleResp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${process.env['OPENAI_API_KEY']}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(titlePayload),
+        });
+        const titleJson = await titleResp.json();
+        let titleRaw: string = titleJson?.choices?.[0]?.message?.content || '';
+        
+        logger.info('OpenAI title response', { 
+          titleRaw, 
+          fullResponse: titleJson 
+        });
+        // Post-process title: strip quotes, punctuation, collapse spaces, cap at 5 words
+        const title = (titleRaw || 'New Session')
+          .trim()
+          .replace(/^\s*["']|["']\s*$/g, '')
+          .replace(/["'.,;:!?\-]+/g, '')
+          .replace(/\s+/g, ' ')
+          .split(' ')
+          .slice(0, 3)
+          .join(' ');
+
+        const summaryPayload = { model, temperature: 0.2, messages: [ { role: 'system', content: summarySystem }, { role: 'user', content: summaryUser } ]};
+        
+        logger.info('Sending summary request to OpenAI', { 
+          model, 
+          systemPrompt: summarySystem,
+          userPromptPreview: summaryUser.slice(0, 100) + '...'
+        });
+        
+        const summaryResp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${process.env['OPENAI_API_KEY']}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(summaryPayload),
+        });
+        const summaryJson = await summaryResp.json();
+        let summary = (summaryJson?.choices?.[0]?.message?.content || '').trim();
+        
+        logger.info('OpenAI summary response', { 
+          summaryRaw: summary, 
+          fullResponse: summaryJson 
+        });
+        // Remove common preambles
+        summary = summary.replace(/^\s*(in this session|this session|we (discussed|talked about)|the conversation)[:,]?\s*/i, '');
+        // Enforce max ~45 words
+        const words = summary.split(/\s+/);
+        if (words.length > 45) summary = words.slice(0, 45).join(' ');
+        // Ensure ending punctuation
+        if (!/[.!?]$/.test(summary)) summary += '.';
+
+        // Persist to conversation if id provided
+        if (conversation_id) {
+          await prisma.user_conversations.update({
+            where: { id: conversation_id },
+            data: { title, context_summary: summary },
+          });
+        }
+
+        // Log prompt events (session_id null; FK is to user_conversation_messages)
+        try {
+          await prisma.user_prompt_logs.create({ data: { user_id, session_id: null, prompt_text: '(title_generation)', gpt_model: model, response_text: title.slice(0, 4000) }});
+          await prisma.user_prompt_logs.create({ data: { user_id, session_id: null, prompt_text: '(summary_generation)', gpt_model: model, response_text: summary.slice(0, 4000) }});
+        } catch (e) {
+          logger.error('Failed to log title/summary generation', { error: e });
+        }
+
+        return { title, summary };
+      } catch (error) {
+        logger.error('Error generating title/summary', { input: { user_id, conversation_id }, error });
+        throw new Error('Failed to generate title and summary');
+      }
+    }),
+
   // Conversation management procedures
   createConversation: protectedProcedure
     .input(z.object({
@@ -443,6 +584,26 @@ export const conversationRouter = t.router({
     }),
 
   // Message management procedures
+  // Alias to support existing mobile client path
+  updateConversationMessage: protectedProcedure
+    .input(z.object({
+      message_id: z.string(),
+      updates: z.any()
+    }))
+    .mutation(async ({ input }) => {
+      try {
+        logger.info('Updating message (alias)', { input });
+        const message = await prisma.user_conversation_messages.update({
+          where: { id: input.message_id },
+          data: input.updates
+        });
+        logger.info('Updated message (alias)', { id: message.id });
+        return message;
+      } catch (error) {
+        logger.error('Error updating message (alias)', { input, error });
+        throw new Error('Failed to update message');
+      }
+    }),
   // Alias to support existing mobile client path
   createConversationMessage: protectedProcedure
     .input(z.object({

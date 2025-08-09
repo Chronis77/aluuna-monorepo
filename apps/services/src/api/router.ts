@@ -1,7 +1,8 @@
 import { initTRPC } from '@trpc/server';
 import { Context } from './context.js';
 import { UserInputSchema, GPTResponseSchema } from '../schemas/index.js';
-import { buildMCP, formatMCPForOpenAI } from '../mcp/buildMCP.js';
+import { buildMCP } from '../mcp/buildMCP.js';
+import { formatMCPForOpenAI } from '../mcp/formatter.js';
 import { generateResponse } from '../openai/client.js';
 import { logger } from '../utils/logger.js';
 import { z } from 'zod';
@@ -31,6 +32,7 @@ import { traumaPatternsRouter } from './routers/traumaPatterns.js';
 import { therapyRouter } from './routers/therapy.js';
 import { patternsRouter } from './routers/patterns.js';
 import { voiceRouter } from './routers/voice.js';
+import { debugRouter } from './routers/debug.js';
 
 const t = initTRPC.context<Context>().create();
 
@@ -60,6 +62,7 @@ export const appRouter = t.router({
   therapy: therapyRouter,
   patterns: patternsRouter,
   voice: voiceRouter,
+  debug: debugRouter,
 
   // Core AI response procedure
   respond: t.procedure
@@ -82,6 +85,15 @@ export const appRouter = t.router({
         // Build MCP context
         const mcp = await buildMCP(userId, session_context);
         const mcpContext = formatMCPForOpenAI(mcp);
+
+        if (process.env.LOG_OPENAI === 'true') {
+          logger.warn('OpenAI request (router preflight)', {
+            userId,
+            mode,
+            userInput,
+            mcpContext,
+          } as any);
+        }
 
         // Generate response with OpenAI
         const response = await generateResponse(user_input, mcpContext, userId, mode);

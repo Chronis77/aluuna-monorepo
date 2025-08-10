@@ -73,6 +73,8 @@ export default function SettingsScreen() {
     if (title === 'Memory Profile') router.push('/memory-profile' as any);
     else if (title === 'Insights') router.push('/insights' as any);
     else if (title === 'Mantras') router.push('/mantras' as any);
+    else if (title === 'Daily Practices') router.push('/daily-practices' as any);
+    else if (title === 'Goals') router.push('/goals' as any);
     else if (title === 'Relationships') router.push('/relationships' as any);
     else if (title === 'Feedback History') router.push('/feedback-history' as any);
     else if (title === 'Settings') router.push('/settings' as any);
@@ -448,8 +450,11 @@ export default function SettingsScreen() {
 
       {/* Header */}
       <View className="flex-row items-center justify-between px-4 py-3 bg-white border-b border-gray-200">
-        <TouchableOpacity onPress={() => router.back()}>
-          <MaterialIcons name="arrow-back" size={24} color="#374151" />
+        <TouchableOpacity onPress={() => router.replace('/conversation' as any)} className="mr-2">
+          <Image
+            source={require('../assets/images/logo-square-small.png')}
+            style={{ width: 40, height: 40, borderRadius: 6 }}
+          />
         </TouchableOpacity>
 
         <Text className="text-lg font-semibold text-gray-900">

@@ -1,6 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Text, TouchableOpacity, View } from 'react-native';
+import { MarkdownMessage } from './MarkdownMessage';
 import { speechManager } from '../lib/speechManager';
 
 interface MessageBubbleProps {
@@ -158,13 +159,11 @@ export function MessageBubble({ text, isUser, timestamp }: MessageBubbleProps) {
             : 'bg-gray-100 rounded-bl-md'
         }`}
       >
-        <Text
-          className={`text-base ${
-            isUser ? 'text-white' : 'text-gray-800'
-          }`}
-        >
-          {text}
-        </Text>
+        {isUser ? (
+          <MarkdownMessage text={text} color="#FFFFFF" />
+        ) : (
+          <MarkdownMessage text={text} color="#1F2937" />
+        )}
         
         {/* Bottom row with timestamp and speaker icon */}
         <View className={`flex-row items-center justify-between mt-2 ${

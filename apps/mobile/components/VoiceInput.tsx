@@ -724,7 +724,7 @@ export function VoiceInput({
                 transform: [{
                   rotate: recordingAnimation.interpolate({
                     inputRange: [0, 1],
-                    outputRange: ['0deg', '360deg'],
+                    outputRange: ['360deg', '0deg'],
                   }),
                 }],
               }}

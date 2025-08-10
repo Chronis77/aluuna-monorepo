@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { MarkdownMessage } from '../components/MarkdownMessage';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -76,6 +77,7 @@ export default function SessionScreen() {
   });
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  // Note: main handleMenuItemPress lives below with onboarding handling
 
   const [toolActivityStatus, setToolActivityStatus] = useState<{
     visible: boolean;
@@ -1117,10 +1119,20 @@ export default function SessionScreen() {
       return (
         <View className="mb-3 items-start px-5">
           <View className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-2 max-w-[80%]">
-            <View className="flex-row items-center">
-              <Text className="text-gray-800 text-base flex-1">{item.text}</Text>
-              <ThreeDotLoader size={3} color="#6B7280" speed={600} />
-            </View>
+            {item.text ? (
+              <View className="flex-row items-center">
+                <View className="flex-1 pr-3">
+                  <MarkdownMessage text={item.text} color="#1F2937" />
+                </View>
+                <View className="m-3 ml-0 pl-0">
+                  <ThreeDotLoader size={3} color="#6B7280" speed={600} />
+                </View>
+              </View>
+            ) : (
+              <View className="py-2 items-center justify-center">
+                <ThreeDotLoader size={3} color="#6B7280" speed={600} />
+              </View>
+            )}
           </View>
         </View>
       );
@@ -1148,6 +1160,10 @@ export default function SessionScreen() {
       router.push('/feedback-history' as any);
     } else if (title === 'Settings') {
       router.push('/settings' as any);
+    } else if (title === 'Daily Practices') {
+      router.push('/daily-practices' as any);
+    } else if (title === 'Goals') {
+      router.push('/goals' as any);
     } else if (title === 'Complete Onboarding') {
       // Attempt to resume where the user left off
       resumeOnboarding();

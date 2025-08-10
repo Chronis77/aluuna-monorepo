@@ -60,7 +60,7 @@ export const config = {
   tts: {
     apiKey: process.env.EXPO_PUBLIC_ALUUNA_APP_API_KEY || '', // Aluuna app API key
     serverUrl: process.env.EXPO_PUBLIC_TTS_SERVER_URL || 'https://aluuna-services-production.up.railway.app', // Deployed Railway services server
-    timeout: parseInt(process.env.EXPO_PUBLIC_TTS_TIMEOUT || '10000'), // Increased timeout for Railway
+    timeout: parseInt(process.env.EXPO_PUBLIC_TTS_TIMEOUT || '120000'), // Increased default timeout for longer synthesis and cold starts
   },
   ui: {
     loadingTimeout: parseInt(process.env.EXPO_PUBLIC_LOADING_TIMEOUT || '5000'), // Loading screen timeout

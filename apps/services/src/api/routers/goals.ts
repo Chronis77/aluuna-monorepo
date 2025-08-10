@@ -65,16 +65,29 @@ export const goalsRouter = t.router({
       progressPercentage: z.number().min(0).max(100).optional()
     }))
     .mutation(async ({ ctx, input }) => {
-      const { goalId, targetDate, ...updateData } = input;
-      const data: any = updateData;
-      
-      if (targetDate !== undefined) {
-        data.target_date = targetDate ? new Date(targetDate) : null;
-      }
+      const {
+        goalId,
+        goalTitle,
+        goalDescription,
+        goalCategory,
+        priorityLevel,
+        targetDate,
+        status,
+        progressPercentage,
+      } = input;
+
+      const data: any = {};
+      if (goalTitle !== undefined) data.goal_title = goalTitle;
+      if (goalDescription !== undefined) data.goal_description = goalDescription;
+      if (goalCategory !== undefined) data.goal_category = goalCategory;
+      if (priorityLevel !== undefined) data.priority_level = priorityLevel;
+      if (targetDate !== undefined) data.target_date = targetDate ? new Date(targetDate) : null;
+      if (status !== undefined) data.status = status;
+      if (progressPercentage !== undefined) data.progress_percentage = progressPercentage;
 
       return await ctx.prisma.user_goals.update({
         where: { id: goalId },
-        data
+        data,
       });
     }),
 

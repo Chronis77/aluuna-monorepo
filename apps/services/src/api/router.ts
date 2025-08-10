@@ -22,6 +22,7 @@ import { innerPartsRouter } from './routers/innerParts.js';
 // Import new specialized routers
 import { themesRouter } from './routers/themes.js';
 import { goalsRouter } from './routers/goals.js';
+import { dailyPracticesRouter } from './routers/dailyPractices.js';
 import { copingToolsRouter } from './routers/copingTools.js';
 import { emotionalDataRouter } from './routers/emotionalData.js';
 import { lifestyleRouter } from './routers/lifestyle.js';
@@ -52,6 +53,7 @@ export const appRouter = t.router({
   // Specialized data management routers
   themes: themesRouter,
   goals: goalsRouter,
+  dailyPractices: dailyPracticesRouter,
   copingTools: copingToolsRouter,
   emotionalData: emotionalDataRouter,
   lifestyle: lifestyleRouter,

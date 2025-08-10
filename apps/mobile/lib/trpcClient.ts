@@ -525,6 +525,64 @@ class TRPCClient {
     return this.request('insights.deleteInsight', { id });
   }
 
+  // Goals
+  async getUserGoals(userId: string, status?: 'active'|'completed'|'paused'|'abandoned') {
+    return this.request('goals.getUserGoals', { userId, status });
+  }
+
+  async createGoal(payload: {
+    userId: string;
+    goalTitle: string;
+    goalDescription?: string;
+    goalCategory?: string;
+    priorityLevel?: number;
+    targetDate?: string;
+    progressPercentage?: number;
+  }) {
+    return this.request('goals.createGoal', payload);
+  }
+
+  async updateGoal(goalId: string, updates: {
+    goalTitle?: string;
+    goalDescription?: string;
+    goalCategory?: string;
+    priorityLevel?: number;
+    targetDate?: string;
+    status?: 'active'|'completed'|'paused'|'abandoned';
+    progressPercentage?: number;
+  }) {
+    return this.request('goals.updateGoal', { goalId, ...updates });
+  }
+
+  async deleteGoal(goalId: string) {
+    return this.request('goals.deleteGoal', { goalId });
+  }
+
+  async getGoalStats(userId: string) {
+    return this.request('goals.getGoalStats', { userId });
+  }
+
+  // Daily practices
+  async getDailyPractices(userId: string, opts?: { onlyPinned?: boolean; onlySuggested?: boolean }) {
+    return this.request('dailyPractices.getUserDailyPractices', { userId, ...(opts || {}) });
+  }
+
+  async createDailyPractice(userId: string, promptText: string, options?: { isSuggested?: boolean; isPinned?: boolean; relatedSessionId?: string; date?: string; source?: string }) {
+    return this.request('dailyPractices.createDailyPractice', { userId, promptText, ...options });
+  }
+
+  async updateDailyPractice(id: string, updates: { promptText?: string; isSuggested?: boolean; isPinned?: boolean; completedAt?: string | null }) {
+    return this.request('dailyPractices.updateDailyPractice', { id, ...updates });
+  }
+
+  async deleteDailyPractice(id: string) {
+    return this.request('dailyPractices.deleteDailyPractice', { id });
+  }
+
+  async logDailyPractice(userId: string, practiceId: string, params?: { moodBefore?: number; moodAfter?: number; reflection?: string; date?: string }) {
+    return this.request('dailyPractices.logDailyPractice', { userId, practiceId, ...(params || {}) });
+  }
+
   // Memory Snapshots
   async getMemorySnapshots(userId: string) {
     return this.request('memory.getMemorySnapshots', { userId });

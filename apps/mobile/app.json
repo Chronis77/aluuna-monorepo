@@ -11,12 +11,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.aluuna.app",
-      "buildNumber": "2",
+      "buildNumber": "6",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app needs access to your microphone for journaling features.",
         "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to transcribe your voice for journaling.",
         "UIBackgroundModes": [
-          "audio",
           "audio"
         ],
         "CFBundleDisplayName": "Aluuna",
@@ -43,8 +42,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.aluuna.app",
-      "versionCode": 2,
-      "usesCleartextTraffic": true
+      "versionCode": 3
     },
     "web": {
       "bundler": "metro",
@@ -62,7 +60,17 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "manifestApplicationAttributes": {
+              "android:usesCleartextTraffic": "true"
+            }
+          }
+        }
+      ]
     ],
     "splash": {
       "image": "./assets/images/logo.png",

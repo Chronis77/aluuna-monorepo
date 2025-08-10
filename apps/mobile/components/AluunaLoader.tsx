@@ -98,7 +98,7 @@ export function AluunaLoader({
   }, [bounce1, bounce2, bounce3, bounce4, bounce5, bounce6, rotate1, rotate2, rotate3, rotate4, rotate5, rotate6]);
 
   // Use exact colors from tailwind config
-  const aluunaColors = ['#7B61FF', '#3D91D7', '#0FB5BA', '#9FD070', '#F7941D', '#F9CB28'];
+  const aluunaColors = ['#8A318F', '#066285', '#20B5C9', '#A6E3E3', '#F7941D', '#F9CB28'];
   const renderDot = (index: number, bounce: Animated.Value, rotate: Animated.Value) => {
     return (
       <Animated.View

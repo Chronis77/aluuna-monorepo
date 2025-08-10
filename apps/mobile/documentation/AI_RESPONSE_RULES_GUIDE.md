@@ -116,7 +116,7 @@ The system automatically validates AI responses against the rules:
 
 The response rules are used in:
 
-1. **OpenAI Service** (`lib/openaiService.ts`)
+1. **Conversation Response Service** (`lib/conversationResponseService.ts`)
    - `generateResponse()` method
    - `generateStructuredResponse()` method
    - Automatic validation of responses

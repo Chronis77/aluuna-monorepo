@@ -95,7 +95,7 @@ export function Toast({
         return {
           backgroundColor: '#EFF6FF',
           icon: 'info',
-          iconColor: '#3D91D7',
+          iconColor: '#066285',
         };
     }
   };

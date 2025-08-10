@@ -2,8 +2,8 @@ import { initTRPC } from '@trpc/server';
 import { Context } from '../context.js';
 import { logger } from '../../utils/logger.js';
 import { z } from 'zod';
-import { withArrayFallback, withConnectionErrorHandling, withDeleteErrorHandling } from '../../utils/connectionUtils.js';
-import { protectedProcedure, publicProcedure } from '../middleware/auth.js';
+import { withArrayFallback, withDeleteErrorHandling } from '../../utils/connectionUtils.js';
+import { protectedProcedure } from '../middleware/auth.js';
 
 const t = initTRPC.context<Context>().create();
 
@@ -18,7 +18,7 @@ export const mantrasRouter = t.router({
         logger.info('Getting mantras', { userId: input.userId });
         
         const result = await withArrayFallback(
-          () => ctx.prisma.mantras.findMany({
+          () => ctx.prisma.user_mantras.findMany({
             where: {
               user_id: input.userId
             },
@@ -52,7 +52,7 @@ export const mantrasRouter = t.router({
     }),
 
   // Create a new mantra
-  createMantra: t.procedure
+  createMantra: protectedProcedure
     .input(z.object({
       id: z.string().optional(),
       user_id: z.string(),
@@ -69,7 +69,7 @@ export const mantrasRouter = t.router({
         // Generate a proper UUID if not provided
         const mantraId = input.id || crypto.randomUUID();
         
-        const newMantra = await ctx.prisma.mantras.create({
+        const newMantra = await ctx.prisma.user_mantras.create({
           data: {
             id: mantraId,
             user_id: input.user_id,
@@ -90,7 +90,7 @@ export const mantrasRouter = t.router({
     }),
 
   // Update a mantra
-  updateMantra: t.procedure
+  updateMantra: protectedProcedure
     .input(z.object({
       id: z.string(),
       text: z.string().optional(),
@@ -104,7 +104,7 @@ export const mantrasRouter = t.router({
         if (input.text !== undefined) updateData.text = input.text;
         if (input.is_pinned !== undefined) updateData.is_pinned = input.is_pinned;
         
-        const updatedMantra = await ctx.prisma.mantras.update({
+        const updatedMantra = await ctx.prisma.user_mantras.update({
           where: {
             id: input.id
           },
@@ -120,7 +120,7 @@ export const mantrasRouter = t.router({
     }),
 
   // Delete a mantra
-  deleteMantra: t.procedure
+  deleteMantra: protectedProcedure
     .input(z.object({
       id: z.string()
     }))
@@ -129,7 +129,7 @@ export const mantrasRouter = t.router({
         logger.info('Deleting mantra', { id: input.id });
         
         const result = await withDeleteErrorHandling(
-          () => ctx.prisma.mantras.delete({
+          () => ctx.prisma.user_mantras.delete({
             where: {
               id: input.id
             }

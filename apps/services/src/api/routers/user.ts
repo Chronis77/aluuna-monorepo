@@ -51,7 +51,9 @@ export const userRouter = t.router({
       play_audio_response: z.boolean().optional(),
       preferred_therapist_name: z.string().optional(),
       daily_reminder_time: z.string().nullable().optional(),
-      timezone: z.string().optional()
+      timezone: z.string().optional(),
+      user_voice_id: z.string().optional(),
+      ai_voice_id: z.string().optional()
     }))
     .mutation(async ({ input, ctx }) => {
       try {
@@ -64,7 +66,9 @@ export const userRouter = t.router({
             play_audio_response: input.play_audio_response,
             preferred_therapist_name: input.preferred_therapist_name,
             daily_reminder_time: input.daily_reminder_time ? new Date(input.daily_reminder_time) : null,
-            timezone: input.timezone
+            timezone: input.timezone,
+            user_voice_id: input.user_voice_id,
+            ai_voice_id: input.ai_voice_id
           },
           create: {
             user_id: input.user_id,
@@ -72,7 +76,9 @@ export const userRouter = t.router({
             play_audio_response: input.play_audio_response ?? true,
             preferred_therapist_name: input.preferred_therapist_name,
             daily_reminder_time: input.daily_reminder_time ? new Date(input.daily_reminder_time) : null,
-            timezone: input.timezone
+            timezone: input.timezone,
+            user_voice_id: input.user_voice_id ?? 'alloy',
+            ai_voice_id: input.ai_voice_id ?? 'shimmer'
           }
         });
         

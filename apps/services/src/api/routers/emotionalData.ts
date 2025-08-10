@@ -42,10 +42,10 @@ export const emotionalDataRouter = t.router({
         data: {
           user_id: input.userId,
           state_name: input.stateName,
-          state_description: input.stateDescription,
-          physical_sensations: input.physicalSensations,
-          thoughts_patterns: input.thoughtsPatterns,
-          behaviors: input.behaviors,
+          state_description: input.stateDescription ?? null,
+          ...(input.physicalSensations !== undefined && { physical_sensations: input.physicalSensations }),
+          ...(input.thoughtsPatterns !== undefined && { thoughts_patterns: input.thoughtsPatterns }),
+          ...(input.behaviors !== undefined && { behaviors: input.behaviors }),
           intensity_level: input.intensityLevel || 5
         }
       });
@@ -67,7 +67,15 @@ export const emotionalDataRouter = t.router({
       const { stateId, ...updateData } = input;
       return await ctx.prisma.user_emotional_states.update({
         where: { id: stateId },
-        data: updateData
+        data: {
+          ...(updateData.isActive !== undefined && { is_active: updateData.isActive }),
+          ...(updateData.stateName !== undefined && { state_name: updateData.stateName }),
+          ...(updateData.stateDescription !== undefined && { state_description: updateData.stateDescription }),
+          ...(updateData.physicalSensations !== undefined && { physical_sensations: updateData.physicalSensations }),
+          ...(updateData.thoughtsPatterns !== undefined && { thoughts_patterns: updateData.thoughtsPatterns }),
+          ...(updateData.behaviors !== undefined && { behaviors: updateData.behaviors }),
+          ...(updateData.intensityLevel !== undefined && { intensity_level: updateData.intensityLevel }),
+        }
       });
     }),
 
@@ -107,11 +115,11 @@ export const emotionalDataRouter = t.router({
         data: {
           user_id: input.userId,
           pattern_name: input.patternName,
-          emotional_state: input.emotionalState,
-          triggers: input.triggers,
-          duration_pattern: input.durationPattern,
+          ...(input.emotionalState !== undefined && { emotional_state: input.emotionalState }),
+          ...(input.triggers !== undefined && { triggers: input.triggers }),
+          ...(input.durationPattern !== undefined && { duration_pattern: input.durationPattern }),
           intensity_level: input.intensityLevel || 5,
-          coping_strategies: input.copingStrategies
+          ...(input.copingStrategies !== undefined && { coping_strategies: input.copingStrategies })
         }
       });
     }),
@@ -162,9 +170,9 @@ export const emotionalDataRouter = t.router({
           user_id: input.userId,
           recorded_date: new Date(input.recordedDate),
           mood_score: input.moodScore,
-          mood_label: input.moodLabel,
-          contributing_factors: input.contributingFactors,
-          notes: input.notes
+          ...(input.moodLabel !== undefined && { mood_label: input.moodLabel }),
+          ...(input.contributingFactors !== undefined && { contributing_factors: input.contributingFactors }),
+          ...(input.notes !== undefined && { notes: input.notes })
         }
       });
     }),
@@ -212,8 +220,8 @@ export const emotionalDataRouter = t.router({
         data: {
           user_id: input.userId,
           mood_score: input.moodScore,
-          mood_label: input.moodLabel,
-          notes: input.notes
+          ...(input.moodLabel !== undefined && { mood_label: input.moodLabel }),
+          ...(input.notes !== undefined && { notes: input.notes })
         }
       });
     }),
@@ -261,15 +269,15 @@ export const emotionalDataRouter = t.router({
       ]);
 
       const averageMood = moodTrends.length > 0 
-        ? moodTrends.reduce((sum, t) => sum + t.mood_score, 0) / moodTrends.length 
+        ? moodTrends.reduce((sum, t) => sum + (t.mood_score ?? 0), 0) / moodTrends.length 
         : 0;
 
       const averageEmotionalScore = emotionalTrends.length > 0 
-        ? emotionalTrends.reduce((sum, t) => sum + t.mood_score, 0) / emotionalTrends.length 
+        ? emotionalTrends.reduce((sum, t) => sum + (t.mood_score ?? 0), 0) / emotionalTrends.length 
         : 0;
 
-      const highIntensityStates = emotionalStates.filter(s => s.intensity_level >= 8).length;
-      const highIntensityPatterns = emotionalPatterns.filter(p => p.intensity_level >= 8).length;
+      const highIntensityStates = emotionalStates.filter(s => (s.intensity_level ?? 0) >= 8).length;
+      const highIntensityPatterns = emotionalPatterns.filter(p => (p.intensity_level ?? 0) >= 8).length;
 
       return {
         averageMood,

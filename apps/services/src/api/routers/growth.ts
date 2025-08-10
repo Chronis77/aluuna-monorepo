@@ -46,11 +46,11 @@ export const growthRouter = t.router({
         data: {
           user_id: input.userId,
           milestone_title: input.milestoneTitle,
-          milestone_description: input.milestoneDescription,
-          category: input.category,
+          ...(input.milestoneDescription !== undefined && { milestone_description: input.milestoneDescription }),
+          ...(input.category !== undefined && { category: input.category }),
           date_achieved: input.dateAchieved ? new Date(input.dateAchieved) : null,
           significance_level: input.significanceLevel || 5,
-          lessons_learned: input.lessonsLearned
+          ...(input.lessonsLearned !== undefined && { lessons_learned: input.lessonsLearned })
         }
       });
     }),
@@ -121,11 +121,11 @@ export const growthRouter = t.router({
         data: {
           user_id: input.userId,
           opportunity_title: input.opportunityTitle,
-          opportunity_description: input.opportunityDescription,
-          area_of_growth: input.areaOfGrowth,
+          ...(input.opportunityDescription !== undefined && { opportunity_description: input.opportunityDescription }),
+          ...(input.areaOfGrowth !== undefined && { area_of_growth: input.areaOfGrowth }),
           readiness_level: input.readinessLevel || 5,
-          potential_impact: input.potentialImpact,
-          action_steps: input.actionSteps
+          ...(input.potentialImpact !== undefined && { potential_impact: input.potentialImpact }),
+          ...(input.actionSteps !== undefined && { action_steps: input.actionSteps })
         }
       });
     }),
@@ -146,7 +146,15 @@ export const growthRouter = t.router({
       const { opportunityId, ...updateData } = input;
       return await ctx.prisma.user_growth_opportunities.update({
         where: { id: opportunityId },
-        data: updateData
+        data: {
+          ...(updateData.opportunityTitle !== undefined && { opportunity_title: updateData.opportunityTitle }),
+          ...(updateData.opportunityDescription !== undefined && { opportunity_description: updateData.opportunityDescription }),
+          ...(updateData.areaOfGrowth !== undefined && { area_of_growth: updateData.areaOfGrowth }),
+          ...(updateData.readinessLevel !== undefined && { readiness_level: updateData.readinessLevel }),
+          ...(updateData.potentialImpact !== undefined && { potential_impact: updateData.potentialImpact }),
+          ...(updateData.actionSteps !== undefined && { action_steps: updateData.actionSteps }),
+          ...(updateData.isActive !== undefined && { is_active: updateData.isActive })
+        }
       });
     }),
 
@@ -189,10 +197,10 @@ export const growthRouter = t.router({
         data: {
           user_id: input.userId,
           strength_name: input.strengthName,
-          strength_category: input.strengthCategory,
+          ...(input.strengthCategory !== undefined && { strength_category: input.strengthCategory }),
           confidence_level: input.confidenceLevel || 5,
-          how_developed: input.howDeveloped,
-          how_utilized: input.howUtilized
+          ...(input.howDeveloped !== undefined && { how_developed: input.howDeveloped }),
+          ...(input.howUtilized !== undefined && { how_utilized: input.howUtilized })
         }
       });
     }),
@@ -212,7 +220,14 @@ export const growthRouter = t.router({
       const { strengthId, ...updateData } = input;
       return await ctx.prisma.user_strengths.update({
         where: { id: strengthId },
-        data: updateData
+        data: {
+          ...(updateData.strengthName !== undefined && { strength_name: updateData.strengthName }),
+          ...(updateData.strengthCategory !== undefined && { strength_category: updateData.strengthCategory }),
+          ...(updateData.confidenceLevel !== undefined && { confidence_level: updateData.confidenceLevel }),
+          ...(updateData.howDeveloped !== undefined && { how_developed: updateData.howDeveloped }),
+          ...(updateData.howUtilized !== undefined && { how_utilized: updateData.howUtilized }),
+          ...(updateData.isActive !== undefined && { is_active: updateData.isActive })
+        }
       });
     }),
 
@@ -260,9 +275,9 @@ export const growthRouter = t.router({
         data: {
           user_id: input.userId,
           milestone: input.milestone,
-          related_session_id: input.relatedSessionId,
+          ...(input.relatedSessionId !== undefined && { related_session_id: input.relatedSessionId }),
           date_achieved: input.dateAchieved ? new Date(input.dateAchieved) : null,
-          method: input.method
+          ...(input.method !== undefined && { method: input.method })
         }
       });
     }),
@@ -308,18 +323,18 @@ export const growthRouter = t.router({
       ]);
 
       const totalMilestones = milestones.length;
-      const highSignificanceMilestones = milestones.filter(m => m.significance_level >= 8).length;
+      const highSignificanceMilestones = milestones.filter(m => (m.significance_level ?? 0) >= 8).length;
       const milestoneCategories = [...new Set(milestones.map(m => m.category).filter(Boolean))];
       const averageSignificance = milestones.length > 0 
         ? milestones.reduce((sum, m) => sum + (m.significance_level || 0), 0) / milestones.length 
         : 0;
 
       const totalOpportunities = opportunities.length;
-      const highReadinessOpportunities = opportunities.filter(o => o.readiness_level >= 8).length;
+      const highReadinessOpportunities = opportunities.filter(o => (o.readiness_level ?? 0) >= 8).length;
       const opportunityAreas = [...new Set(opportunities.map(o => o.area_of_growth).filter(Boolean))];
 
       const totalStrengths = strengths.length;
-      const highConfidenceStrengths = strengths.filter(s => s.confidence_level >= 8).length;
+      const highConfidenceStrengths = strengths.filter(s => (s.confidence_level ?? 0) >= 8).length;
       const strengthCategories = [...new Set(strengths.map(s => s.strength_category).filter(Boolean))];
       const averageConfidence = strengths.length > 0 
         ? strengths.reduce((sum, s) => sum + (s.confidence_level || 0), 0) / strengths.length 

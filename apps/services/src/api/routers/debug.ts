@@ -16,7 +16,7 @@ export const debugRouter = t.router({
       session_context: z.record(z.any()).optional(),
     }))
     .query(async ({ input }) => {
-      const model = process.env.OPENAI_CHAT_MODEL || 'gpt-4o';
+      const model = process.env['OPENAI_CHAT_MODEL'] || 'gpt-4o';
       const mcp = await buildMCP(input.user_id, input.session_context || {});
       const systemPrompt = buildSystemPrompt(mcp as any, input.mode);
       const messages = [

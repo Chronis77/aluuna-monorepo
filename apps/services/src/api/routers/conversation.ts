@@ -280,20 +280,39 @@ export const conversationRouter = t.router({
     .mutation(async ({ input }) => {
       const { user_id, conversation_id, messages, max_chars = 12000 } = input;
       try {
-        // Gather messages either from DB by conversation_id or from provided list
+        // Server log: received request
+        try {
+          const msgs: Array<{ role: 'user'|'assistant'; content: string }> = Array.isArray(messages) ? messages : [];
+          const first = msgs[0]?.content ?? '';
+          const last = msgs.length > 0 ? (msgs[msgs.length - 1]?.content ?? '') : '';
+          logger.info('🟣 TS: Server received generateTitleAndSummary', {
+            user_id,
+            conversation_id,
+            providedMessages: Array.isArray(messages) ? messages.length : 0,
+            firstMessagePreview: first.slice(0, 120),
+            lastMessagePreview: last.slice(0, 120),
+            max_chars
+          });
+        } catch (e) {
+          logger.warn('🟣 TS: Server failed to log incoming payload preview (non-fatal)', { error: e });
+        }
+
+        // Prefer provided messages; fallback to DB by conversation_id
         let history: Array<{ role: 'user'|'assistant'; content: string }> = [];
-        if (conversation_id) {
+        if (Array.isArray(messages) && messages.length > 0) {
+          history = messages.filter(m => m && (m.role === 'user' || m.role === 'assistant')) as any;
+          try { logger.info('🟣 TS: Server using provided messages for title/summary', { count: history.length }); } catch {}
+        } else if (conversation_id) {
           const rows = await prisma.user_conversation_messages.findMany({
             where: { user_id, conversation_id },
             orderBy: { created_at: 'asc' },
-            select: { input_type: true, input_transcript: true, gpt_response: true },
+            select: { input_transcript: true, gpt_response: true },
           });
           for (const r of rows) {
-            if (r.input_type === 'user' && r.input_transcript) history.push({ role: 'user', content: r.input_transcript });
-            if (r.input_type === 'assistant' && r.gpt_response) history.push({ role: 'assistant', content: r.gpt_response });
+            if (r.input_transcript) history.push({ role: 'user', content: r.input_transcript });
+            if (r.gpt_response) history.push({ role: 'assistant', content: r.gpt_response });
           }
-        } else if (Array.isArray(messages)) {
-          history = messages.filter(m => m && (m.role === 'user' || m.role === 'assistant')) as any;
+          try { logger.info('🟣 TS: Server built history from DB rows', { dbRows: rows.length, historyCount: history.length }); } catch {}
         }
 
         // Adjacent dedupe
@@ -319,11 +338,11 @@ export const conversationRouter = t.router({
           transcriptPreview: transcript.slice(0, 200) + '...'
         });
 
-        // Prepare prompts - make them more explicit to prevent hallucination
-        const titleSystem = 'You must create a title based ONLY on the conversation provided. Read the conversation carefully and create a 3-5 word title that reflects the actual content discussed. Return ONLY the title in Title Case, no punctuation, no quotes, no extra text.';
+        // Prepare prompts - make them more explicit and align with style guidelines
+        const titleSystem = 'You must create a title based ONLY on the conversation provided. Read the conversation carefully and create a concise 3-5 word title that reflects the actual content discussed. Return ONLY the title in Title Case, no punctuation, no quotes, no extra text.';
         const titleUser = `Based on this EXACT conversation below, create a 3-5 word title that reflects what was actually discussed:\n\n${transcript}\n\nTitle:`;
 
-        const summarySystem = 'You must summarize ONLY the conversation provided. Read carefully and write a 1-2 sentence summary (max 45 words) that reflects the actual content discussed. Start directly with the content, no preambles like "In this session". Be accurate to what was actually said.';
+        const summarySystem = 'You must summarize ONLY the conversation provided. Write 1-2 sentences (max 45 words). Start directly with the content (no preambles). Do NOT use the phrases "the user" or "user" at all; describe their experience directly. If you refer to the assistant, say "Aluuna" instead of "assistant". Be accurate to what was actually said.';
         const summaryUser = `Summarize this EXACT conversation in 1-2 sentences (max 45 words). Base your summary only on what was actually discussed:\n\n${transcript}\n\nSummary:`;
 
         const model = process.env['OPENAI_CHAT_MODEL'] || 'gpt-4o';
@@ -349,14 +368,14 @@ export const conversationRouter = t.router({
           titleRaw, 
           fullResponse: titleJson 
         });
-        // Post-process title: strip quotes, punctuation, collapse spaces, cap at 5 words
+        // Post-process title: strip quotes, punctuation, collapse spaces, cap at up to 5 words
         const title = (titleRaw || 'New Session')
           .trim()
           .replace(/^\s*["']|["']\s*$/g, '')
           .replace(/["'.,;:!?\-]+/g, '')
           .replace(/\s+/g, ' ')
           .split(' ')
-          .slice(0, 3)
+          .slice(0, 5)
           .join(' ');
 
         const summaryPayload = { model, temperature: 0.2, messages: [ { role: 'system', content: summarySystem }, { role: 'user', content: summaryUser } ]};
@@ -381,6 +400,21 @@ export const conversationRouter = t.router({
         });
         // Remove common preambles
         summary = summary.replace(/^\s*(in this session|this session|we (discussed|talked about)|the conversation)[:,]?\s*/i, '');
+
+        // Style post-processing: replace terms
+        summary = summary
+          // Assistant naming
+          .replace(/\bthe assistant\b/gi, 'Aluuna')
+          .replace(/\bassistant\b/gi, 'Aluuna')
+          // Avoid calling them "the user" or "user"
+          .replace(/\bthe user's\b/gi, 'their')
+          .replace(/\buser's\b/gi, 'their')
+          .replace(/\bthe user\b/gi, '')
+          .replace(/\buser\b/gi, '')
+          // Cleanup extra spaces caused by removals
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+
         // Enforce max ~45 words
         const words = summary.split(/\s+/);
         if (words.length > 45) summary = words.slice(0, 45).join(' ');
@@ -393,6 +427,18 @@ export const conversationRouter = t.router({
             where: { id: conversation_id },
             data: { title, context_summary: summary },
           });
+          // Server log: persisted values
+          try {
+            logger.info('🟣 TS: Server persisted title/summary', {
+              conversation_id,
+              savedTitle: title,
+              savedSummaryPreview: summary.slice(0, 200),
+              titleLength: title.length,
+              summaryLength: summary.length
+            });
+          } catch (e) {
+            logger.warn('🟣 TS: Server failed to log persistence details (non-fatal)', { error: e });
+          }
         }
 
         // Log prompt events (session_id null; FK is to user_conversation_messages)
@@ -403,6 +449,16 @@ export const conversationRouter = t.router({
           logger.error('Failed to log title/summary generation', { error: e });
         }
 
+        // Server log: returning to client
+        try {
+          logger.info('🟣 TS: Server returning title/summary to client', {
+            conversation_id,
+            returnTitle: title,
+            returnSummaryPreview: summary.slice(0, 200)
+          });
+        } catch (e) {
+          logger.warn('🟣 TS: Server failed to log response to client (non-fatal)', { error: e });
+        }
         return { title, summary };
       } catch (error) {
         logger.error('Error generating title/summary', { input: { user_id, conversation_id }, error });

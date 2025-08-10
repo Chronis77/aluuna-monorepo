@@ -43,8 +43,8 @@ export const goalsRouter = t.router({
         data: {
           user_id: input.userId,
           goal_title: input.goalTitle,
-          goal_description: input.goalDescription,
-          goal_category: input.goalCategory,
+          ...(input.goalDescription !== undefined && { goal_description: input.goalDescription }),
+          ...(input.goalCategory !== undefined && { goal_category: input.goalCategory }),
           priority_level: input.priorityLevel || 3,
           target_date: input.targetDate ? new Date(input.targetDate) : null,
           progress_percentage: input.progressPercentage || 0
@@ -100,7 +100,10 @@ export const goalsRouter = t.router({
       const { goalId, ...updateData } = input;
       return await ctx.prisma.user_goals.update({
         where: { id: goalId },
-        data: updateData
+        data: {
+          progress_percentage: updateData.progressPercentage,
+          ...(updateData.status !== undefined && { status: updateData.status })
+        }
       });
     }),
 
@@ -162,7 +165,7 @@ export const goalsRouter = t.router({
         ? goals.reduce((sum, g) => sum + (g.progress_percentage || 0), 0) / goals.length 
         : 0;
 
-      const highPriorityGoals = goals.filter(g => g.priority_level >= 4).length;
+      const highPriorityGoals = goals.filter(g => (g.priority_level ?? 0) >= 4).length;
 
       return {
         totalGoals,

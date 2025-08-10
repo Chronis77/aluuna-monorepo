@@ -3,7 +3,7 @@ import { initTRPC } from '@trpc/server';
 import { Context } from '../context.js';
 import { prisma, forceConnectionReset } from '../../db/client.js';
 import { logger } from '../../utils/logger.js';
-import { protectedProcedure, publicProcedure } from '../middleware/auth.js';
+import { protectedProcedure } from '../middleware/auth.js';
 
 const t = initTRPC.context<Context>().create();
 
@@ -14,7 +14,9 @@ export const authRouter = t.router({
       password: z.string().min(1),
     }))
     .mutation(async ({ input }) => {
-      const { email, password } = input;
+      const { email } = input;
+      
+      // TODO: Implement actual password validation when auth provider is integrated
       
       logger.info('Login attempt via tRPC', { email });
       
@@ -107,7 +109,9 @@ export const authRouter = t.router({
       name: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const { email, password, name } = input;
+      const { email, name } = input;
+      
+      // TODO: Implement actual password hashing when auth provider is integrated
       
       logger.info('Registration attempt via tRPC', { email });
       
@@ -237,7 +241,9 @@ export const authRouter = t.router({
     }))
     .mutation(async ({ input }) => {
       // Call register directly to avoid circular reference
-      const { email, password, name } = input;
+      const { email, name } = input;
+      
+      // TODO: Implement actual password hashing when auth provider is integrated
       
       logger.info('SignUp attempt via tRPC', { email });
       

@@ -1,7 +1,8 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+    Animated,
     Alert,
     FlatList,
     Image,
@@ -18,6 +19,8 @@ import { VoiceSettings } from '../components/VoiceSettings';
 import { speechManager } from '../lib/speechManager';
 import { trpcClient } from '../lib/trpcClient';
 import { voicePreferencesService } from '../lib/voicePreferencesService';
+import { ProfileMenu } from '../components/ProfileMenu';
+import { Dimensions } from 'react-native';
 
 interface SettingsItem {
   id: string;
@@ -36,7 +39,7 @@ export default function SettingsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [showVoiceSettings, setShowVoiceSettings] = useState(false);
-  const [usePiperTts, setUsePiperTts] = useState(false);
+  const [useServerTts, setUseServerTts] = useState(false);
   const [useEarpiece, setUseEarpiece] = useState(false);
   const [dialogueMode, setDialogueMode] = useState(false);
   const [toast, setToast] = useState<{
@@ -48,6 +51,37 @@ export default function SettingsScreen() {
     message: '',
     type: 'info',
   });
+
+  // Profile menu state/animation
+  const { width: screenWidth } = Dimensions.get('window');
+  const PROFILE_MENU_WIDTH = screenWidth * 0.6;
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuTranslateX = useRef(new Animated.Value(screenWidth)).current;
+
+  const toggleProfileMenu = () => {
+    const toValue = isProfileMenuOpen ? screenWidth : 0;
+    Animated.spring(profileMenuTranslateX, {
+      toValue,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 8,
+    }).start();
+    setIsProfileMenuOpen(!isProfileMenuOpen);
+  };
+
+  const handleMenuItemPress = (title: string) => {
+    if (title === 'Memory Profile') router.push('/memory-profile' as any);
+    else if (title === 'Insights') router.push('/insights' as any);
+    else if (title === 'Mantras') router.push('/mantras' as any);
+    else if (title === 'Relationships') router.push('/relationships' as any);
+    else if (title === 'Feedback History') router.push('/feedback-history' as any);
+    else if (title === 'Settings') router.push('/settings' as any);
+    else {
+      setToast({ visible: true, message: `${title} feature coming soon!`, type: 'info' });
+    }
+  };
+
+  // Note: logout handler is defined below with confirmation prompt
 
   // Initialize the settings screen
   useEffect(() => {
@@ -68,7 +102,7 @@ export default function SettingsScreen() {
       setCurrentUserId(user.id);
 
       // Load current settings
-      setUsePiperTts(speechManager.isUsingPiperTts());
+      setUseServerTts(speechManager.isUsingServerTts());
       setUseEarpiece(false); // Default to speaker
       setDialogueMode(voicePreferencesService.getDialogueMode());
 
@@ -84,15 +118,15 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleTogglePiperTts = async (value: boolean) => {
+  const handleToggleServerTts = async (value: boolean) => {
     try {
-      setUsePiperTts(value);
-      speechManager.setUsePiperTts(value);
+      setUseServerTts(value);
+      speechManager.setUseServerTts(value);
       
       if (value) {
         Alert.alert(
-          'Enhanced TTS Setup',
-          'Enhanced TTS is now enabled! The system will try your local Google TTS server first, then fall back to online services for natural speech synthesis.',
+          'Enhanced TTS Enabled',
+          'Enhanced TTS now routes through the Aluuna server using OpenAI TTS for higher-quality, consistent speech.',
           [{ text: 'OK' }]
         );
       }
@@ -103,7 +137,7 @@ export default function SettingsScreen() {
         type: 'success',
       });
     } catch (error) {
-      console.error('Error toggling Piper TTS:', error);
+      console.error('Error toggling server TTS:', error);
       setToast({
         visible: true,
         message: 'Failed to update TTS setting.',
@@ -234,36 +268,36 @@ export default function SettingsScreen() {
       type: 'navigate',
       onPress: () => setShowVoiceSettings(true),
     },
-    {
-      id: 'dialogue-mode',
-      title: 'Dialogue Mode',
-      subtitle: dialogueMode ? 'Auto-send & speak' : 'Manual send',
-      icon: 'forum',
-      iconColor: '#10B981',
-      type: 'toggle',
-      value: dialogueMode,
-      onToggle: handleToggleDialogueMode,
-    },
-    {
-      id: 'enhanced-tts',
-      title: 'Enhanced TTS',
-      subtitle: 'Use advanced speech synthesis for better voice quality',
-      icon: 'psychology',
-      iconColor: '#10B981',
-      type: 'toggle',
-      value: usePiperTts,
-      onToggle: handleTogglePiperTts,
-    },
-    {
-      id: 'audio-routing',
-      title: 'Audio Output',
-      subtitle: useEarpiece ? 'Use earpiece when phone is near ear' : 'Always use speaker',
-      icon: 'volume-up',
-      iconColor: '#F59E0B',
-      type: 'toggle',
-      value: useEarpiece,
-      onToggle: handleToggleEarpiece,
-    },
+    // {
+    //   id: 'dialogue-mode',
+    //   title: 'Dialogue Mode',
+    //   subtitle: dialogueMode ? 'Auto-send & speak' : 'Manual send',
+    //   icon: 'forum',
+    //   iconColor: '#10B981',
+    //   type: 'toggle',
+    //   value: dialogueMode,
+    //   onToggle: handleToggleDialogueMode,
+    // },
+    // {
+    //   id: 'enhanced-tts',
+    //   title: 'Enhanced TTS',
+    //   subtitle: 'Use advanced speech synthesis for better voice quality',
+    //   icon: 'psychology',
+    //   iconColor: '#10B981',
+    //   type: 'toggle',
+    //   value: useServerTts,
+    //   onToggle: handleToggleServerTts,
+    // },
+    // {
+    //   id: 'audio-routing',
+    //   title: 'Audio Output',
+    //   subtitle: useEarpiece ? 'Use earpiece when phone is near ear' : 'Always use speaker',
+    //   icon: 'volume-up',
+    //   iconColor: '#F59E0B',
+    //   type: 'toggle',
+    //   value: useEarpiece,
+    //   onToggle: handleToggleEarpiece,
+    // },
     {
       id: 'notifications',
       title: 'Notifications',
@@ -302,8 +336,23 @@ export default function SettingsScreen() {
       icon: 'delete-forever',
       iconColor: '#DC2626',
       type: 'action',
-      onPress: handleClearData,
+      onPress: () => {
+        setToast({
+          visible: true,
+          message: 'Clear All Data coming soon!',
+          type: 'info',
+        });
+      },
     },
+    // {
+    //   id: 'clear-data',
+    //   title: 'Clear All Data',
+    //   subtitle: 'Permanently delete all your data',
+    //   icon: 'delete-forever',
+    //   iconColor: '#DC2626',
+    //   type: 'action',
+    //   onPress: handleClearData,
+    // },
     {
       id: 'logout',
       title: 'Logout',
@@ -407,7 +456,11 @@ export default function SettingsScreen() {
           Settings
         </Text>
 
-        <View className="w-6" />
+        <View className="flex-row">
+          <TouchableOpacity onPress={toggleProfileMenu}>
+            <MaterialIcons name="account-circle" size={28} color="#374151" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Content */}
@@ -442,6 +495,33 @@ export default function SettingsScreen() {
           });
         }}
       />
+
+      {/* Profile Menu */}
+      <Animated.View
+        className="absolute top-0 bottom-0 right-0 bg-white shadow-lg"
+        style={{
+          width: PROFILE_MENU_WIDTH,
+          transform: [{ translateX: profileMenuTranslateX }],
+          zIndex: 60,
+        }}
+      >
+        <ProfileMenu
+          visible={isProfileMenuOpen}
+          onClose={toggleProfileMenu}
+          onLogout={handleLogout}
+          onMenuItemPress={handleMenuItemPress}
+        />
+      </Animated.View>
+
+      {/* Overlay for profile menu */}
+      {isProfileMenuOpen && (
+        <TouchableOpacity
+          className="absolute inset-0"
+          activeOpacity={1}
+          onPress={toggleProfileMenu}
+          style={{ backgroundColor: 'rgba(0,0,0,0.2)', zIndex: 50 }}
+        />
+      )}
     </SafeAreaView>
   );
 } 

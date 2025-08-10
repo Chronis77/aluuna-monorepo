@@ -35,27 +35,26 @@ export function AudioTest() {
     }
   };
 
-  const testGoogleTts = async () => {
+  const testServerTts = async () => {
     try {
       setIsTesting(true);
       
-      // Test Google TTS specifically
-      const isUsingGoogleTts = speechManager.isUsingPiperTts();
-      const testText = isUsingGoogleTts 
-        ? "This is a test of the enhanced TTS service. The system will try your local Google TTS server first, then fall back to online services if needed. Notice how much more natural and human-like this voice sounds compared to the default speech engine."
-        : "This is a test of the default speech engine. Switch to Google TTS in settings for more natural speech.";
+      const isUsingServerTts = speechManager.isUsingServerTts();
+      const testText = isUsingServerTts
+        ? "This is a test of the enhanced TTS service using OpenAI through the Aluuna server."
+        : "Enhanced TTS is disabled in settings.";
       
       await speechManager.speak(
         testText,
         'test-google-tts',
         {
           onStart: () => {
-            Alert.alert('Enhanced TTS Test', `Testing ${isUsingGoogleTts ? 'Enhanced TTS (Local + Online)' : 'Default Speech'}...`);
+            Alert.alert('Enhanced TTS Test', `Testing ${isUsingServerTts ? 'Enhanced TTS (Server)' : 'Disabled'}...`);
           },
           onDone: () => {
-            const message = isUsingGoogleTts
-              ? 'Enhanced TTS test completed! Check the console to see which service was used (Local Google TTS, VoiceRSS, or other online services).'
-              : 'Default speech test completed! Enable Google TTS in settings for natural speech.';
+            const message = isUsingServerTts
+              ? 'Enhanced TTS test completed!'
+              : 'Enhanced TTS is disabled in settings.';
             Alert.alert('Enhanced TTS Test', message);
             setIsTesting(false);
           },
@@ -176,7 +175,7 @@ export function AudioTest() {
     }
   };
 
-  const isUsingGoogleTts = speechManager.isUsingPiperTts();
+  const isUsingServerTts = speechManager.isUsingServerTts();
 
   return (
     <View className="p-4 bg-white rounded-lg shadow-lg">
@@ -191,11 +190,11 @@ export function AudioTest() {
         </View>
       )}
 
-      {isUsingGoogleTts && (
+      {isUsingServerTts && (
         <View className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
           <Text className="text-sm text-green-800">
             <MaterialIcons name="check-circle" size={16} color="#059669" />
-                            <Text className="ml-1 font-sans">Enhanced TTS is enabled! The system will try your local Google TTS server first, then fall back to online services.</Text>
+            <Text className="ml-1 font-sans">Enhanced TTS is enabled! Audio will be synthesized by OpenAI via the server.</Text>
           </Text>
         </View>
       )}
@@ -214,7 +213,7 @@ export function AudioTest() {
       </TouchableOpacity>
 
       <TouchableOpacity
-        onPress={testGoogleTts}
+        onPress={testServerTts}
         disabled={isTesting || isResetting}
         className={`mb-3 p-3 rounded-lg flex-row items-center justify-center ${
           isTesting || isResetting ? 'bg-gray-400' : 'bg-emerald-500'
@@ -222,7 +221,7 @@ export function AudioTest() {
       >
         <MaterialIcons name="record-voice-over" size={20} color="white" />
         <Text className="text-white font-semibold ml-2">
-          {isTesting ? 'Testing...' : `${isUsingGoogleTts ? 'Enhanced TTS' : 'Default Speech'} Test`}
+          {isTesting ? 'Testing...' : `${isUsingServerTts ? 'Enhanced TTS' : 'Disabled'} Test`}
         </Text>
       </TouchableOpacity>
       
@@ -279,7 +278,7 @@ export function AudioTest() {
       </TouchableOpacity>
       
       <Text className="text-xs text-gray-500 mt-3 text-center">
-        Test order: Basic → {isUsingGoogleTts ? 'Enhanced TTS' : 'Default Speech'} → Speaker → Earpiece → Recording → Reset if needed
+        Test order: Basic → {isUsingServerTts ? 'Enhanced TTS' : 'Disabled'} → Speaker → Earpiece → Recording → Reset if needed
       </Text>
     </View>
   );

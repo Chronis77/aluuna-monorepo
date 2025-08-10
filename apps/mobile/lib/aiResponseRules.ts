@@ -409,21 +409,23 @@ Remember: You are not just responding—you are co-creating a sacred space for h
 
         // Build everything as one large string literal
         return `================================================================================
-CRITICAL RESPONSE FORMAT - YOU MUST FOLLOW THIS EXACTLY
+FUNCTION CALLING FOR THERAPEUTIC TOOLS
 ================================================================================
 
-*** ABSOLUTELY CRITICAL: You MUST follow this format for EVERY response ***
+*** IMPORTANT: You have access to powerful therapeutic tools via function calling ***
 
-1. Write your empathetic therapeutic response to the user (natural, conversational, helpful)
-2. On a new line, write exactly: "===METADATA_START==="
-3. On the next line, write this JSON metadata (do not include in user response):
+When you want to help the user by:
+- Creating a personalized mantra or affirmation → call createMantra()
+- Recording a helpful coping tool or strategy → call addCopingTool()
+- Capturing an important insight or breakthrough → call recordInsight()
+- Adding information about relationships → call addRelationship()
+- Recording emotional states and patterns → call recordEmotionalState()
+- Setting goals or intentions → call addGoal()
+- Identifying recurring themes → call addTheme()
 
-METADATA TEMPLATE:
-${metadataTemplate}
-
-*** MANDATORY: You MUST include "===METADATA_START===" after your response. This is not optional. ***
-*** WARNING: If you do not include the metadata, the system will not work properly. ***
-*** EVERY SINGLE RESPONSE must end with "===METADATA_START===" followed by the JSON metadata. ***
+*** USE THESE TOOLS NATURALLY during conversation when it would be helpful ***
+*** You can call multiple tools in one response if appropriate ***
+*** Always explain to the user what you're doing: "I'm adding this mantra to your collection..." ***
 
 ================================================================================
 SYSTEM PERSONALITY & IDENTITY
@@ -528,7 +530,7 @@ CORE REMINDER
 
 Remember: You are not just responding—you are co-creating a sacred space for healing and self-discovery. Every interaction is an opportunity to help them return to their own truth and wisdom.
 
-*** FINAL REMINDER: EVERY response MUST end with "===METADATA_START===" followed by the JSON metadata. This is absolutely required for the system to function properly. ***`;
+*** REMEMBER: Use function calling tools to help users build their therapeutic toolkit in real-time! ***`;
     }
 
     // Analyze user's current emotional state from their message

@@ -2,8 +2,8 @@ import { initTRPC } from '@trpc/server';
 import { Context } from '../context.js';
 import { logger } from '../../utils/logger.js';
 import { z } from 'zod';
-import { withArrayFallback, withConnectionErrorHandling, withDeleteErrorHandling } from '../../utils/connectionUtils.js';
-import { protectedProcedure, publicProcedure } from '../middleware/auth.js';
+import { withArrayFallback, withDeleteErrorHandling } from '../../utils/connectionUtils.js';
+import { protectedProcedure } from '../middleware/auth.js';
 
 const t = initTRPC.context<Context>().create();
 
@@ -18,7 +18,7 @@ export const insightsRouter = t.router({
         logger.info('Getting insights', { userId: input.userId });
         
         const result = await withArrayFallback(
-          () => ctx.prisma.insights.findMany({
+          () => ctx.prisma.user_insights.findMany({
             where: {
               user_id: input.userId
             },
@@ -61,7 +61,7 @@ export const insightsRouter = t.router({
       try {
         logger.info('Updating insight', { id: input.id });
         
-        const updatedInsight = await ctx.prisma.insights.update({
+        const updatedInsight = await ctx.prisma.user_insights.update({
           where: {
             id: input.id
           },
@@ -90,7 +90,7 @@ export const insightsRouter = t.router({
         logger.info('Deleting insight', { id: input.id });
         
         const result = await withDeleteErrorHandling(
-          () => ctx.prisma.insights.delete({
+          () => ctx.prisma.user_insights.delete({
             where: {
               id: input.id
             }

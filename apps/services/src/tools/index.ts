@@ -169,6 +169,61 @@ const SuggestNextStepToolSchema = z.object({
   theme: z.string().optional(),
 });
 
+// New tool schemas for additional memory types (shadow themes, pattern loops, regulation, dysregulation, strengths, support)
+const StoreShadowThemeToolSchema = z.object({
+  userId: z.string().uuid(),
+  themeName: z.string(),
+  themeDescription: z.string().optional(),
+  triggers: z.array(z.string()).optional(),
+  avoidanceBehaviors: z.array(z.string()).optional(),
+  integrationStrategies: z.array(z.string()).optional(),
+});
+
+const StorePatternLoopToolSchema = z.object({
+  userId: z.string().uuid(),
+  loopName: z.string(),
+  triggerSituation: z.string().optional(),
+  automaticResponse: z.string().optional(),
+  consequences: z.string().optional(),
+  alternativeResponses: z.array(z.string()).optional(),
+});
+
+const StoreRegulationStrategyToolSchema = z.object({
+  userId: z.string().uuid(),
+  strategyName: z.string(),
+  strategyType: z.string().optional(),
+  when_to_use: z.string().optional(),
+  effectiveness: z.number().int().min(1).max(10).optional(),
+  notes: z.string().optional(),
+});
+
+const StoreDysregulatingFactorToolSchema = z.object({
+  userId: z.string().uuid(),
+  factorName: z.string(),
+  factorType: z.string().optional(),
+  impactLevel: z.number().int().min(1).max(10).optional(),
+  triggers: z.array(z.string()).optional(),
+  copingStrategies: z.array(z.string()).optional(),
+});
+
+const StoreStrengthToolSchema = z.object({
+  userId: z.string().uuid(),
+  name: z.string(),
+  category: z.string().optional(),
+  confidenceLevel: z.number().int().min(1).max(10).optional(),
+  howDeveloped: z.string().optional(),
+  howUtilized: z.string().optional(),
+});
+
+const StoreSupportSystemToolSchema = z.object({
+  userId: z.string().uuid(),
+  personName: z.string(),
+  relationshipType: z.string().optional(),
+  supportType: z.array(z.string()).optional(),
+  reliabilityLevel: z.number().int().min(1).max(10).optional(),
+  contactInfo: z.string().optional(),
+});
+
 export const tools = [
   {
     type: 'function' as const,
@@ -338,6 +393,54 @@ export const tools = [
       parameters: SuggestNextStepToolSchema
     }
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'storeShadowTheme',
+      description: 'Store a shadow theme including unconscious aspects of themselves that they do not fully accept, acknowledge, or express.',
+      parameters: StoreShadowThemeToolSchema
+    }
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'storePatternLoop',
+      description: 'Store a pattern loop including trigger, automatic response, consequences, and alternatives.',
+      parameters: StorePatternLoopToolSchema
+    }
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'storeRegulationStrategy',
+      description: 'Store a nervous-system regulation strategy with type, usage guidance, and effectiveness.',
+      parameters: StoreRegulationStrategyToolSchema
+    }
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'storeDysregulatingFactor',
+      description: 'Store a dysregulating factor with triggers and coping strategies.',
+      parameters: StoreDysregulatingFactorToolSchema
+    }
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'storeStrength',
+      description: 'Store a personal strength with category, confidence, and usage context.',
+      parameters: StoreStrengthToolSchema
+    }
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'storeSupportSystem',
+      description: 'Store a support system member and their relationship/support types.',
+      parameters: StoreSupportSystemToolSchema
+    }
+  },
 ];
 
 export async function handleToolCall(toolCall: any): Promise<any> {
@@ -401,6 +504,18 @@ export async function handleToolCall(toolCall: any): Promise<any> {
         return await updateHabitStreak(args);
       case 'suggestNextStep':
         return await suggestNextStep(args);
+      case 'storeShadowTheme':
+        return await storeShadowTheme(args);
+      case 'storePatternLoop':
+        return await storePatternLoop(args);
+      case 'storeRegulationStrategy':
+        return await storeRegulationStrategy(args);
+      case 'storeDysregulatingFactor':
+        return await storeDysregulatingFactor(args);
+      case 'storeStrength':
+        return await storeStrength(args);
+      case 'storeSupportSystem':
+        return await storeSupportSystem(args);
       
       default:
         throw new Error(`Unknown tool: ${name}`);
@@ -467,6 +582,8 @@ async function storeInsight(args: any) {
       created_at: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) },
     }
   });
+
+  // (moved) New tool schemas declared above
   if (recent) {
     logger.info('Duplicate insight suppressed', { userId });
     try { toolCalls.inc({ tool_name: 'storeInsight', status: 'deduped' }); } catch {}
@@ -874,7 +991,7 @@ async function updateAIPreferences(args: any) {
 }
 
 async function createDailyPractice(args: any) {
-  const { userId, practiceName, practiceType, frequency, notes, isSuggested, isPinned } = CreateDailyPracticeToolSchema.parse(args);
+  const { userId, practiceName, isSuggested, isPinned } = CreateDailyPracticeToolSchema.parse(args);
   const p = await prisma.user_daily_practices.create({
     data: {
       user_id: userId,
@@ -963,4 +1080,148 @@ async function suggestNextStep(args: any) {
     results['practice'] = await createDailyPractice({ userId, practiceName });
   }
   return { success: true, results };
+}
+
+async function storeShadowTheme(args: any) {
+  const { userId, themeName, themeDescription, triggers, avoidanceBehaviors, integrationStrategies } = StoreShadowThemeToolSchema.parse(args);
+  const dup = await prisma.user_shadow_themes.findFirst({
+    where: { user_id: userId, theme_name: themeName, created_at: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) } }
+  }).catch(() => null);
+  if (dup) {
+    try { toolCalls.inc({ tool_name: 'storeShadowTheme', status: 'deduped' }); } catch {}
+    return { success: true, shadowThemeId: dup.id, message: 'Duplicate suppressed' };
+  }
+  const st = await prisma.user_shadow_themes.create({
+    data: {
+      user_id: userId,
+      theme_name: themeName,
+      theme_description: themeDescription ?? null,
+      triggers: triggers ?? [],
+      avoidance_behaviors: avoidanceBehaviors ?? [],
+      integration_strategies: integrationStrategies ?? [],
+    }
+  });
+  const content = `${themeName} ${themeDescription ?? ''}`.trim();
+  await enqueueEmbeddingUpsert({ id: st.id, userId, namespace: 'insight', content, metadata: { type: 'shadow_theme', triggers, avoidanceBehaviors } });
+  return { success: true, shadowThemeId: st.id };
+}
+
+async function storePatternLoop(args: any) {
+  const { userId, loopName, triggerSituation, automaticResponse, consequences, alternativeResponses } = StorePatternLoopToolSchema.parse(args);
+  const dup = await prisma.user_pattern_loops.findFirst({
+    where: { user_id: userId, loop_name: loopName, created_at: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) } }
+  }).catch(() => null);
+  if (dup) {
+    try { toolCalls.inc({ tool_name: 'storePatternLoop', status: 'deduped' }); } catch {}
+    return { success: true, patternLoopId: dup.id, message: 'Duplicate suppressed' };
+  }
+  const pl = await prisma.user_pattern_loops.create({
+    data: {
+      user_id: userId,
+      loop_name: loopName,
+      trigger_situation: triggerSituation ?? null,
+      automatic_response: automaticResponse ?? null,
+      consequences: consequences ?? null,
+      alternative_responses: alternativeResponses ?? [],
+    }
+  });
+  const content = `${loopName} ${triggerSituation ?? ''} ${automaticResponse ?? ''} ${consequences ?? ''}`.trim();
+  await enqueueEmbeddingUpsert({ id: pl.id, userId, namespace: 'insight', content, metadata: { type: 'pattern_loop' } });
+  return { success: true, patternLoopId: pl.id };
+}
+
+async function storeRegulationStrategy(args: any) {
+  const { userId, strategyName, strategyType, when_to_use, effectiveness, notes } = StoreRegulationStrategyToolSchema.parse(args);
+  const dup = await prisma.user_regulation_strategies.findFirst({
+    where: { user_id: userId, strategy_name: strategyName, created_at: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) } }
+  }).catch(() => null);
+  if (dup) {
+    try { toolCalls.inc({ tool_name: 'storeRegulationStrategy', status: 'deduped' }); } catch {}
+    return { success: true, regulationStrategyId: dup.id, message: 'Duplicate suppressed' };
+  }
+  const rs = await prisma.user_regulation_strategies.create({
+    data: {
+      user_id: userId,
+      strategy_name: strategyName,
+      strategy_type: strategyType ?? null,
+      when_to_use: when_to_use ?? null,
+      effectiveness_rating: effectiveness ?? null,
+      notes: notes ?? null,
+    }
+  });
+  const content = `${strategyName} ${strategyType ?? ''} ${when_to_use ?? ''}`.trim();
+  await enqueueEmbeddingUpsert({ id: rs.id, userId, namespace: 'insight', content, metadata: { type: 'regulation_strategy', effectiveness } });
+  return { success: true, regulationStrategyId: rs.id };
+}
+
+async function storeDysregulatingFactor(args: any) {
+  const { userId, factorName, factorType, impactLevel, triggers, copingStrategies } = StoreDysregulatingFactorToolSchema.parse(args);
+  const dup = await prisma.user_dysregulating_factors.findFirst({
+    where: { user_id: userId, factor_name: factorName, created_at: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) } }
+  }).catch(() => null);
+  if (dup) {
+    try { toolCalls.inc({ tool_name: 'storeDysregulatingFactor', status: 'deduped' }); } catch {}
+    return { success: true, dysregulatingFactorId: dup.id, message: 'Duplicate suppressed' };
+  }
+  const df = await prisma.user_dysregulating_factors.create({
+    data: {
+      user_id: userId,
+      factor_name: factorName,
+      factor_type: factorType ?? null,
+      impact_level: impactLevel ?? null,
+      triggers: triggers ?? [],
+      coping_strategies: copingStrategies ?? [],
+    }
+  });
+  const content = `${factorName} ${factorType ?? ''}`.trim();
+  await enqueueEmbeddingUpsert({ id: df.id, userId, namespace: 'insight', content, metadata: { type: 'dysregulating_factor', impactLevel } });
+  return { success: true, dysregulatingFactorId: df.id };
+}
+
+async function storeStrength(args: any) {
+  const { userId, name, category, confidenceLevel, howDeveloped, howUtilized } = StoreStrengthToolSchema.parse(args);
+  const dup = await prisma.user_strengths.findFirst({
+    where: { user_id: userId, strength_name: name, created_at: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) } }
+  }).catch(() => null);
+  if (dup) {
+    try { toolCalls.inc({ tool_name: 'storeStrength', status: 'deduped' }); } catch {}
+    return { success: true, strengthId: dup.id, message: 'Duplicate suppressed' };
+  }
+  const s = await prisma.user_strengths.create({
+    data: {
+      user_id: userId,
+      strength_name: name,
+      strength_category: category ?? null,
+      confidence_level: confidenceLevel ?? null,
+      how_developed: howDeveloped ?? null,
+      how_utilized: howUtilized ?? null,
+    }
+  });
+  const content = `${name} ${category ?? ''}`.trim();
+  await enqueueEmbeddingUpsert({ id: s.id, userId, namespace: 'insight', content, metadata: { type: 'strength', confidenceLevel } });
+  return { success: true, strengthId: s.id };
+}
+
+async function storeSupportSystem(args: any) {
+  const { userId, personName, relationshipType, supportType, reliabilityLevel, contactInfo } = StoreSupportSystemToolSchema.parse(args);
+  const dup = await prisma.user_support_system.findFirst({
+    where: { user_id: userId, person_name: personName, created_at: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) } }
+  }).catch(() => null);
+  if (dup) {
+    try { toolCalls.inc({ tool_name: 'storeSupportSystem', status: 'deduped' }); } catch {}
+    return { success: true, supportSystemId: dup.id, message: 'Duplicate suppressed' };
+  }
+  const u = await prisma.user_support_system.create({
+    data: {
+      user_id: userId,
+      person_name: personName,
+      relationship_type: relationshipType ?? null,
+      support_type: supportType ?? [],
+      reliability_level: reliabilityLevel ?? null,
+      contact_info: contactInfo ?? null,
+    }
+  });
+  const content = `${personName} ${relationshipType ?? ''}`.trim();
+  await enqueueEmbeddingUpsert({ id: u.id, userId, namespace: 'insight', content, metadata: { type: 'support_system', relationshipType } });
+  return { success: true, supportSystemId: u.id };
 }

@@ -89,8 +89,8 @@ The PromptOptimizer now:
 - Tracks progress in the database
 - Provides continuity-aware prompts
 
-### **Step 4: Update OpenAIService**
-The OpenAIService now:
+### **Step 4: Update ConversationResponseService**
+The ConversationResponseService now:
 - Uses async prompt optimization
 - Integrates session continuity into AI responses
 - Maintains cost optimization
@@ -100,7 +100,7 @@ The OpenAIService now:
 ### **When User Sends a Message**
 1. **Check Continuity**: `SessionContinuityManager.checkSessionResume()`
 2. **Build Prompt**: `PromptOptimizer.buildOptimizedPrompt()` with continuity context
-3. **Generate Response**: `OpenAIService.generateResponse()` with continuity awareness
+3. **Generate Response**: `ConversationResponseService.generateResponse()` with continuity awareness
 4. **Track Progress**: `SessionContinuityManager.trackSessionProgress()` to database
 
 ### **When User Returns to Session**

@@ -1,7 +1,8 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Alert,
   FlatList,
   Image,
@@ -20,6 +21,8 @@ import { Toast } from '../components/ui/Toast';
 import { MemoryProcessingService } from '../lib/memoryProcessingService';
 import { trpcClient } from '../lib/trpcClient';
 import { useAuth } from '../context/AuthContext';
+import { ProfileMenu } from '../components/ProfileMenu';
+import { Dimensions } from 'react-native';
 
 interface Insight {
   id: string;
@@ -51,6 +54,44 @@ export default function InsightsScreen() {
     message: '',
     type: 'info',
   });
+
+  // Profile menu state/animation
+  const { width: screenWidth } = Dimensions.get('window');
+  const PROFILE_MENU_WIDTH = screenWidth * 0.6;
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuTranslateX = useRef(new Animated.Value(screenWidth)).current;
+
+  const toggleProfileMenu = () => {
+    const toValue = isProfileMenuOpen ? screenWidth : 0;
+    Animated.spring(profileMenuTranslateX, {
+      toValue,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 8,
+    }).start();
+    setIsProfileMenuOpen(!isProfileMenuOpen);
+  };
+
+  const handleMenuItemPress = (title: string) => {
+    if (title === 'Memory Profile') router.push('/memory-profile' as any);
+    else if (title === 'Insights') router.push('/insights' as any);
+    else if (title === 'Mantras') router.push('/mantras' as any);
+    else if (title === 'Relationships') router.push('/relationships' as any);
+    else if (title === 'Feedback History') router.push('/feedback-history' as any);
+    else if (title === 'Settings') router.push('/settings' as any);
+    else {
+      setToast({ visible: true, message: `${title} feature coming soon!`, type: 'info' });
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await trpcClient.signOut();
+      router.replace('/login' as any);
+    } catch (error) {
+      setToast({ visible: true, message: 'Error during logout', type: 'error' });
+    }
+  };
 
   // Initialize the insights screen
   useEffect(() => {
@@ -326,9 +367,14 @@ export default function InsightsScreen() {
           Insights & Learnings
         </Text>
 
-        <TouchableOpacity onPress={() => loadInsights(currentUserId!)}>
-          <MaterialIcons name="refresh" size={24} color="#374151" />
-        </TouchableOpacity>
+        <View className="flex-row">
+          <TouchableOpacity onPress={() => loadInsights(currentUserId!)} className="mr-3">
+            <MaterialIcons name="refresh" size={24} color="#374151" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={toggleProfileMenu}>
+            <MaterialIcons name="account-circle" size={28} color="#374151" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search and Filter */}
@@ -476,6 +522,33 @@ export default function InsightsScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Profile Menu */}
+      <Animated.View
+        className="absolute top-0 bottom-0 right-0 bg-white shadow-lg"
+        style={{
+          width: PROFILE_MENU_WIDTH,
+          transform: [{ translateX: profileMenuTranslateX }],
+          zIndex: 60,
+        }}
+      >
+        <ProfileMenu
+          visible={isProfileMenuOpen}
+          onClose={toggleProfileMenu}
+          onLogout={handleLogout}
+          onMenuItemPress={handleMenuItemPress}
+        />
+      </Animated.View>
+
+      {/* Overlay for profile menu */}
+      {isProfileMenuOpen && (
+        <TouchableOpacity
+          className="absolute inset-0"
+          activeOpacity={1}
+          onPress={toggleProfileMenu}
+          style={{ backgroundColor: 'rgba(0,0,0,0.2)', zIndex: 50 }}
+        />
+      )}
     </SafeAreaView>
   );
 } 

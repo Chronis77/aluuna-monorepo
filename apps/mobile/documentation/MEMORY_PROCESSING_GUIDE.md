@@ -60,7 +60,7 @@ The system processes 8 key data points from structured OpenAI responses:
 
 ```typescript
 import { MemoryProcessingService } from './lib/memoryProcessingService';
-import { OpenAIService } from './lib/openaiService';
+import { ConversationResponseService as OpenAIService } from './lib/conversationResponseService';
 
 // Process a user message with memory integration
 const handleUserMessage = async (userMessage: string, userId: string, sessionId: string) => {

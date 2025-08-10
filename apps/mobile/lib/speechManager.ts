@@ -1,7 +1,6 @@
 import { Audio } from 'expo-av';
-import * as Speech from 'expo-speech';
 import { Platform } from 'react-native';
-import { googleTtsService } from './googleTtsService';
+import { openAiTtsService } from './openAiTtsService';
 import { voicePreferencesService } from './voicePreferencesService';
 
 interface SpeechOptions {
@@ -18,21 +17,21 @@ interface SpeechOptions {
 class SpeechManager {
   private currentSpeaker: string | null = null;
   private originalAudioMode: any = null;
-  private useFreeTts: boolean = true; // Toggle between Free TTS and default speech
+  private useServerTts: boolean = true; // Toggle server TTS on/off
 
   constructor() {
     // Don't initialize audio routing immediately to avoid conflicts
     // We'll set it up when actually speaking
   }
 
-  // Set whether to use Free TTS or default speech
-  setUsePiperTts(useFree: boolean) {
-    this.useFreeTts = useFree;
+  // Toggle Enhanced TTS (server OpenAI TTS)
+  setUseServerTts(enabled: boolean) {
+    this.useServerTts = enabled;
   }
 
   // Get current TTS setting
-  isUsingPiperTts(): boolean {
-    return this.useFreeTts;
+  isUsingServerTts(): boolean {
+    return this.useServerTts;
   }
 
   private async setupAudioForSpeech() {
@@ -76,87 +75,29 @@ class SpeechManager {
   async speak(text: string, speakerId: string, options?: SpeechOptions): Promise<void> {
     // Stop any current speech
     if (this.currentSpeaker && this.currentSpeaker !== speakerId) {
-      await Speech.stop();
-      googleTtsService.stop();
+      openAiTtsService.stop();
     }
 
     this.currentSpeaker = speakerId;
 
-    console.log(`🔊 Speech request: isUser=${options?.isUser}, useFreeTts=${this.useFreeTts}`);
+    console.log(`🔊 Speech request: isUser=${options?.isUser}, useServerTts=${this.useServerTts}`);
 
-    if (this.useFreeTts) {
-      // Use Google TTS for natural-sounding speech
-      try {
-        await googleTtsService.speak(text, speakerId, {
-          volume: options?.volume || 1.0,
-          speed: options?.rate || 1.0,
-          isUser: options?.isUser || false, // Pass the isUser parameter
-          onStart: options?.onStart,
-          onDone: options?.onDone,
-          onError: options?.onError,
-        });
-      } catch (error) {
-        console.error('Google TTS failed, falling back to default speech:', error);
-        // Fall back to default speech if Google TTS fails
-        await this.speakWithDefault(text, speakerId, options);
-      }
-    } else {
-      // Use default expo-speech
-      await this.speakWithDefault(text, speakerId, options);
+    if (!this.useServerTts) {
+      throw new Error('Server TTS is disabled');
     }
+    // Only use server TTS now
+    await openAiTtsService.speak(text, speakerId, {
+      volume: options?.volume || 1.0,
+      speed: options?.rate || 1.0,
+      isUser: options?.isUser || false,
+      onStart: options?.onStart,
+      onDone: options?.onDone,
+      onError: options?.onError,
+    });
   }
 
-  private async speakWithDefault(text: string, speakerId: string, options?: SpeechOptions): Promise<void> {
-    // Set up audio for speech
-    await this.setupAudioForSpeech();
-
-    // Get voice parameters from preferences
-    const isUser = options?.isUser || false;
-    const voiceParams = voicePreferencesService.getVoiceParams(isUser);
-
-    console.log(`🎤 Default speech params: isUser=${isUser}, pitch=${voiceParams.pitch}, rate=${voiceParams.rate}`);
-
-    // Set higher volume and proper audio routing
-    const speechOptions = {
-      language: 'en',
-      pitch: voiceParams.pitch,
-      rate: voiceParams.rate,
-      volume: voiceParams.volume || 1.0,
-      ...options,
-    };
-
-    return new Promise((resolve, reject) => {
-      Speech.speak(text, {
-        ...speechOptions,
-        onStart: () => {
-          if (options?.onStart) {
-            options.onStart();
-          }
-        },
-        onDone: () => {
-          this.currentSpeaker = null;
-          // Restore audio mode for recording (fire and forget)
-          this.restoreAudioMode().catch(error => {
-            console.error('Error restoring audio mode:', error);
-          });
-          if (options?.onDone) {
-            options.onDone();
-          }
-          resolve();
-        },
-        onError: (error) => {
-          this.currentSpeaker = null;
-          // Restore audio mode for recording (fire and forget)
-          this.restoreAudioMode().catch(restoreError => {
-            console.error('Error restoring audio mode:', restoreError);
-          });
-          if (options?.onError) {
-            options.onError(error);
-          }
-          reject(error);
-        },
-      });
-    });
+  private async speakWithDefault(_text: string, _speakerId: string, _options?: SpeechOptions): Promise<void> {
+    throw new Error('Default speech is no longer supported. Use server TTS.');
   }
 
   // Method to switch audio routing based on proximity
@@ -189,8 +130,7 @@ class SpeechManager {
   }
 
   stop(): void {
-    Speech.stop();
-    googleTtsService.stop();
+    openAiTtsService.stop();
     this.currentSpeaker = null;
     // Restore audio mode when stopping
     this.restoreAudioMode().catch(error => {
@@ -225,11 +165,8 @@ class SpeechManager {
     }
   }
 
-  // Set API key for Google TTS
-  setPiperApiKey(apiKey: string) {
-    // Google TTS doesn't need API key setting in this implementation
-    console.log('Google TTS API key set (not used in current implementation)');
-  }
+  // Deprecated: no-op
+  setPiperApiKey(_apiKey: string) {}
 }
 
 export const speechManager = new SpeechManager(); 

@@ -298,7 +298,7 @@ export default function OnboardingStep1() {
 
               {/* Content */}
               <View className="rounded-2xl p-6 mb-6 bg-white">
-                <Text className="text-xl font-heading mb-6 text-[#7B61FF]">
+                <Text className="text-xl font-heading mb-6 text-[#8A318F]">
                   Let's start by understanding your current mental health baseline
                 </Text>
 

@@ -35,11 +35,19 @@ export class MemoryProcessingService {
   // Process coping tools from session
   static async processCopingTools(sessionId: string, userId: string, copingTools: any[]) {
     try {
-      // TODO: Implement coping tools processing with tRPC
       console.log('Processing coping tools:', { sessionId, userId, copingTools });
       for (const tool of copingTools) {
-        console.log('Coping tool:', tool);
-        // await trpcClient.createCopingTool({ user_id: userId, session_id: sessionId, ...tool });
+        if (tool && tool.tool_name) {
+          console.log('Creating coping tool:', tool);
+          await trpcClient.addCopingTool({ 
+            user_id: userId, 
+            tool_name: tool.tool_name,
+            tool_category: tool.tool_category,
+            effectiveness_rating: tool.effectiveness_rating,
+            description: tool.description,
+            when_to_use: tool.when_to_use
+          });
+        }
       }
     } catch (error) {
       console.error('Error processing coping tools:', error);
@@ -80,11 +88,19 @@ export class MemoryProcessingService {
   // Process mantras from session
   static async processMantras(sessionId: string, userId: string, mantras: any[]) {
     try {
-      // TODO: Implement mantras processing with tRPC
       console.log('Processing mantras:', { sessionId, userId, mantras });
       for (const mantra of mantras) {
-        console.log('Mantra:', mantra);
-        // await trpcClient.createMantra({ user_id: userId, session_id: sessionId, ...mantra });
+        if (mantra && typeof mantra === 'string' && mantra.trim()) {
+          console.log('Creating mantra:', mantra);
+          await trpcClient.createMantra({ 
+            user_id: userId, 
+            text: mantra.trim(),
+            source: 'ai_generated',
+            is_favorite: false,
+            tags: ['therapy_session'],
+            is_pinned: false
+          });
+        }
       }
     } catch (error) {
       console.error('Error processing mantras:', error);
@@ -95,11 +111,17 @@ export class MemoryProcessingService {
   // Process relationships from session
   static async processRelationships(sessionId: string, userId: string, relationships: any[]) {
     try {
-      // TODO: Implement relationships processing with tRPC
       console.log('Processing relationships:', { sessionId, userId, relationships });
       for (const relationship of relationships) {
-        console.log('Relationship:', relationship);
-        // await trpcClient.createRelationship({ user_id: userId, session_id: sessionId, ...relationship });
+        if (relationship && relationship.name) {
+          console.log('Creating relationship:', relationship);
+          await trpcClient.createRelationship(
+            userId,
+            relationship.name,
+            relationship.role || 'Other',
+            relationship.notes || null
+          );
+        }
       }
     } catch (error) {
       console.error('Error processing relationships:', error);
@@ -107,17 +129,75 @@ export class MemoryProcessingService {
     }
   }
 
+  // Fetch relationships for a user
+  static async getUserRelationships(userId: string) {
+    try {
+      const response = await trpcClient.getRelationships(userId);
+      // Server returns array of rows; keep as-is for screen mapping
+      return Array.isArray(response) ? response : (response?.relationships || []);
+    } catch (error) {
+      console.error('Error getting user relationships:', error);
+      throw error;
+    }
+  }
+
   // Process insights from session
   static async processInsights(sessionId: string, userId: string, insights: any[]) {
     try {
-      // TODO: Implement insights processing with tRPC
       console.log('Processing insights:', { sessionId, userId, insights });
+      // Insights would be handled by the memory profile system
+      // For now, just log them as they need a different structure
       for (const insight of insights) {
-        console.log('Insight:', insight);
-        // await trpcClient.createInsight({ user_id: userId, session_id: sessionId, ...insight });
+        console.log('Insight captured:', insight);
       }
     } catch (error) {
       console.error('Error processing insights:', error);
+      throw error;
+    }
+  }
+
+  // Main method to process structured AI response metadata
+  static async processStructuredResponse(userId: string, structuredData: any) {
+    try {
+      console.log('🧠 Processing structured AI response data for user:', userId);
+      console.log('📊 Structured data:', JSON.stringify(structuredData, null, 2));
+
+      if (!structuredData.new_memory_inference) {
+        console.log('⚠️ No new_memory_inference found in structured data');
+        return;
+      }
+
+      const inference = structuredData.new_memory_inference;
+      const sessionId = `session-${Date.now()}`;
+
+      // Process new mantra
+      if (inference.new_mantra && typeof inference.new_mantra === 'string') {
+        console.log('💫 Processing new mantra:', inference.new_mantra);
+        await this.processMantras(sessionId, userId, [inference.new_mantra]);
+      }
+
+      // Process new relationship
+      if (inference.new_relationship && inference.new_relationship.name) {
+        console.log('👥 Processing new relationship:', inference.new_relationship);
+        await this.processRelationships(sessionId, userId, [inference.new_relationship]);
+      }
+
+      // Process coping tool used
+      if (inference.coping_tool_used && typeof inference.coping_tool_used === 'string') {
+        console.log('🛠️ Processing coping tool:', inference.coping_tool_used);
+        const copingTool = {
+          tool_name: inference.coping_tool_used,
+          tool_category: 'ai_suggested',
+          effectiveness_rating: 5, // Default positive rating for AI suggested tools
+          description: `Tool suggested during therapy session`,
+          when_to_use: 'During emotional processing'
+        };
+        await this.processCopingTools(sessionId, userId, [copingTool]);
+      }
+
+      console.log('✅ Structured response processing completed');
+    } catch (error) {
+      console.error('❌ Error processing structured response:', error);
       throw error;
     }
   }
@@ -143,10 +223,10 @@ export class MemoryProcessingService {
   // Update memory profile with new insights
   static async updateMemoryProfile(userId: string, updates: any) {
     try {
-      await trpcClient.upsertMemoryProfile({
-        user_id: userId,
-        ...updates
-      });
+      // No direct upsertMemoryProfile method exists with the new normalized schema.
+      // Caller should route updates to the appropriate specific procedures.
+      console.warn('updateMemoryProfile is deprecated with the new schema. Route updates to specific trpcClient methods.');
+      return;
     } catch (error) {
       console.error('Error updating memory profile:', error);
       throw error;

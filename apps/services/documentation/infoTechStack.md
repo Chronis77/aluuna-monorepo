@@ -7,6 +7,6 @@ Database	        Postgres (via Supabase or Neon)	You already have the schema; be
 Cache	            Redis	                For fast memory, mood trends, insight reuse, TTS output reuse
 LLM Integration	    OpenAI API (tool calling)	First-class support, scalable, reliable
 Tool Dispatcher	    Serverless handler or background queue (e.g. Resend, Supabase Edge Functions, or Cloudflare Workers)	Isolated logic for summarization, analysis, etc.
-Auth	            Supabase Auth or Clerk	Secure, modern, easy to integrate with mobile/web
+Auth	            JWT 	Secure, modern, easy to integrate with mobile/web
 Logging	            Sentry + db.json logs + analytics	Trace prompt paths, audit tool calls, and log emotion flags
 Infra as Code	    Terraform or Supabase Studio	Manageable infra, easy preview deploys

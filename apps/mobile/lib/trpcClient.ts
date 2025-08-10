@@ -530,6 +530,10 @@ class TRPCClient {
     return this.request('memory.getMemorySnapshots', { userId });
   }
 
+  async getAllMemories(userId: string) {
+    return this.request('memory.getAllMemories', { userId });
+  }
+
   async updateMemorySnapshot(id: string, content: string) {
     return this.request('memory.updateMemorySnapshot', { id, content });
   }
@@ -562,6 +566,15 @@ class TRPCClient {
 
   async addStuckPoint(userId: string, content: string) {
     return this.request('memory.addStuckPoint', { userId, content });
+  }
+
+  // Generic memory item update/delete by table + id
+  async updateMemoryItem(tableName: string, itemId: string, updates: any) {
+    return this.request('memory.updateMemoryItem', { tableName, itemId, updates });
+  }
+
+  async deleteMemoryItem(tableName: string, itemId: string) {
+    return this.request('memory.deleteMemoryItem', { tableName, itemId });
   }
 
   // Coping Tools
@@ -603,26 +616,33 @@ class TRPCClient {
 
   // Relationships
   async getRelationships(userId: string) {
-    return this.request('memory.getRelationships', { userId });
+    // Returns raw array of relationships from server
+    return this.request('relationships.getUserRelationships', { userId });
   }
 
-  async createRelationship(data: {
-    id: string;
-    user_id: string;
-    name: string;
-    role: string;
-    notes?: string | null;
-    is_active?: boolean;
-  }) {
-    return this.request('memory.createRelationship', data);
+  async createRelationship(userId: string, name: string, role?: string, notes?: string | null) {
+    const created = await this.request('relationships.createRelationship', {
+      userId,
+      name,
+      role,
+      notes,
+    });
+    return { success: true, relationship: created };
   }
 
-  async updateRelationship(id: string, name: string, role: string, notes?: string | null) {
-    return this.request('memory.updateRelationship', { id, name, role, notes });
+  async updateRelationship(id: string, name?: string, role?: string, notes?: string | null) {
+    const updated = await this.request('relationships.updateRelationship', {
+      relationshipId: id,
+      name,
+      role,
+      notes,
+    });
+    return { success: true, relationship: updated };
   }
 
   async deleteRelationship(id: string) {
-    return this.request('memory.deleteRelationship', { id });
+    const result = await this.request('relationships.deleteRelationship', { id });
+    return result?.success ? result : { success: true };
   }
 
   // Onboarding procedures
@@ -679,11 +699,17 @@ class TRPCClient {
     preferred_therapist_name?: string;
     daily_reminder_time?: string | null;
     timezone?: string;
+    user_voice_id?: string;
+    ai_voice_id?: string;
   }) {
     return this.request('user.upsertUserPreferences', {
       user_id: userId,
       ...preferences
     });
+  }
+
+  async getUserData(userId: string) {
+    return this.request('user.getUserData', { user_id: userId });
   }
 
   // Emotional trends procedures
@@ -791,6 +817,46 @@ class TRPCClient {
     return this.request('conversation.getConversation', {
       conversation_id: conversationId
     });
+  }
+
+  async generateConversationTitleAndSummary(userId: string, conversationId?: string, messages?: { role: 'user'|'assistant'; content: string }[]) {
+    try {
+      // Client transport log: outgoing request
+      try {
+        const first = messages && messages[0] ? messages[0].content : '';
+        const last = messages && messages.length ? messages[messages.length - 1].content : '';
+        console.log('🟣 TS: tRPC request generateConversationTitleAndSummary', {
+          userId,
+          conversationId,
+          messageCount: messages?.length ?? 0,
+          firstMessagePreview: first.slice(0, 120),
+          lastMessagePreview: last.slice(0, 120)
+        });
+      } catch (e) {
+        console.log('🟣 TS: tRPC failed to log request preview (non-fatal)', e);
+      }
+
+      const resp = await this.request('conversation.generateTitleAndSummary', {
+      user_id: userId,
+      conversation_id: conversationId,
+      messages,
+    });
+      // Client transport log: incoming response
+      try {
+        console.log('🟣 TS: tRPC response generateConversationTitleAndSummary', {
+          title: resp?.title,
+          summaryPreview: (resp?.summary || '').slice(0, 200),
+          titleLength: resp?.title?.length ?? 0,
+          summaryLength: resp?.summary?.length ?? 0
+        });
+      } catch (e) {
+        console.log('🟣 TS: tRPC failed to log response preview (non-fatal)', e);
+      }
+      return resp;
+    } catch (error) {
+      console.log('🟣 TS: tRPC error generateConversationTitleAndSummary', error);
+      throw error;
+    }
   }
 
   async getConversationMessages(conversationId: string) {

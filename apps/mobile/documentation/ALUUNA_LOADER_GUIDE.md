@@ -6,7 +6,7 @@ The `AluunaLoader` component provides a beautiful, branded loading animation usi
 
 ## Features
 
-- **Branded Colors**: Uses Aluuna's official color palette (`#3D91D7`, `#0FB5BA`, `#9FD070`, `#F7941D`, `#7B61FF`)
+- **Branded Colors**: Uses Aluuna's official color palette (`#066285`, `#20B5C9`, `#A6E3E3`, `#F7941D`, `#8A318F`)
 - **Multiple Sizes**: Small, medium, and large variants
 - **Customizable**: Optional message display with custom styling
 - **Quirky Animations**: 300ms bounce cycle with 80ms staggered delays, plus rotation and scaling
@@ -126,11 +126,11 @@ if (isLoading) {
 
 The AluunaLoader uses the following colors in sequence:
 
-1. **Blue** (`#3D91D7`) - Primary brand color
-2. **Teal** (`#0FB5BA`) - Secondary brand color  
-3. **Green** (`#9FD070`) - Success/accent color
+1. **Blue** (`#066285`) - Primary brand color
+2. **Teal** (`#20B5C9`) - Secondary brand color  
+3. **Green** (`#A6E3E3`) - Success/accent color
 4. **Orange** (`#F7941D`) - Warning/attention color
-5. **Purple** (`#7B61FF`) - Creative/insight color
+5. **Purple** (`#8A318F`) - Creative/insight color
 
 ## Animation Details
 

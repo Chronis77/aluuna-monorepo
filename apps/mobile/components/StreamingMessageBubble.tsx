@@ -89,22 +89,23 @@ export const StreamingMessageBubble: React.FC<StreamingMessageBubbleProps> = ({
         )}
         
         <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
-          <Text style={textStyle}>
-            {displayedText}
+          <View style={styles.textContainer}>
+            <Text style={textStyle}>
+              {displayedText}
+              {isStreaming && currentIndex < text.length && (
+                <Animated.Text style={[styles.cursor, { opacity: cursorOpacity }]}>
+                  |
+                </Animated.Text>
+              )}
+            </Text>
             {isStreaming && currentIndex < text.length && (
-              <Animated.Text style={[styles.cursor, { opacity: cursorOpacity }]}>
-                |
-              </Animated.Text>
+              <View style={styles.inlineTypingIndicator}>
+                <View style={styles.typingDot} />
+                <View style={styles.typingDot} />
+                <View style={styles.typingDot} />
+              </View>
             )}
-          </Text>
-          
-          {isStreaming && currentIndex < text.length && (
-            <View style={styles.typingIndicator}>
-              <View style={styles.typingDot} />
-              <View style={styles.typingDot} />
-              <View style={styles.typingDot} />
-            </View>
-          )}
+          </View>
         </View>
       </View>
     </View>
@@ -113,7 +114,7 @@ export const StreamingMessageBubble: React.FC<StreamingMessageBubbleProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: 4,
+    marginVertical: 2,
     paddingHorizontal: 16,
   },
   userContainer: {
@@ -142,6 +143,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     maxWidth: '100%',
   },
+  textContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
   userBubble: {
     backgroundColor: '#6366f1',
     borderBottomRightRadius: 4,
@@ -164,10 +170,11 @@ const styles = StyleSheet.create({
     color: '#6366f1',
     fontWeight: 'bold',
   },
-  typingIndicator: {
+  inlineTypingIndicator: {
     flexDirection: 'row',
-    marginTop: 8,
-    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+    marginTop: 0,
   },
   typingDot: {
     width: 6,

@@ -1,6 +1,6 @@
 import { ContextService } from './contextService';
 import { MemoryProcessingService, ProcessingContext, StructuredResponse } from './memoryProcessingService';
-import { Message, OpenAIService } from './openaiService';
+import { Message, ConversationResponseService as OpenAIService } from './conversationResponseService';
 import { trpcClient } from './trpcClient';
 
 /**

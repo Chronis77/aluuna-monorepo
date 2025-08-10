@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { Feedback } from '../types/database';
-import { OpenAIService } from './openaiService';
+import { ConversationResponseService as OpenAIService } from './conversationResponseService';
 import { trpcClient } from './trpcClient';
 
 export interface FeedbackSubmission {

@@ -5,7 +5,7 @@ import { buildMCP } from '../mcp/buildMCP.js';
 import { formatMCPForOpenAI } from '../mcp/formatter.js';
 import { generateResponse } from '../openai/client.js';
 import { logger } from '../utils/logger.js';
-import { z } from 'zod';
+
 
 // Import domain-specific routers
 import { authRouter } from './routers/auth.js';
@@ -68,7 +68,7 @@ export const appRouter = t.router({
   respond: t.procedure
     .input(UserInputSchema)
     .output(GPTResponseSchema)
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       const { user_input, mode, mood_score, session_context } = input;
       
       // For now, we'll use a default user ID - in production this would come from auth
@@ -86,11 +86,11 @@ export const appRouter = t.router({
         const mcp = await buildMCP(userId, session_context);
         const mcpContext = formatMCPForOpenAI(mcp);
 
-        if (process.env.LOG_OPENAI === 'true') {
+        if (process.env['LOG_OPENAI'] === 'true') {
           logger.warn('OpenAI request (router preflight)', {
             userId,
             mode,
-            userInput,
+            user_input,
             mcpContext,
           } as any);
         }

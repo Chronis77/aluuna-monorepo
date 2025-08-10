@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
-const OpenAI = require('openai');
+const OpenAI = null;
 
 const app = express();
 const server = http.createServer(app);
@@ -13,10 +13,8 @@ const io = socketIo(server, {
   }
 });
 
-// Initialize OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// OpenAI usage disabled in mobile dev server; route through services instead
+const openai = null;
 
 app.use(cors());
 app.use(express.json());
@@ -50,32 +48,12 @@ io.on('connection', (socket) => {
         { role: 'user', content: userMessage }
       ];
 
-      // Create streaming response
-      const stream = await openai.chat.completions.create({
-        model: 'gpt-4',
-        messages,
-        temperature: 0.3,
-        max_tokens: 1000,
-        stream: true,
-      });
+      throw new Error('Local websocket-server OpenAI usage is disabled. Use the services server.');
 
       let fullResponse = '';
       let structuredData = null;
 
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content;
-        if (content) {
-          fullResponse += content;
-          
-          // Send chunk to client
-          socket.emit('streaming_message', {
-            type: 'chunk',
-            sessionId,
-            messageId,
-            content,
-          });
-        }
-      }
+      // No streaming here; handled by services server
 
       // Try to parse structured data from response
       try {

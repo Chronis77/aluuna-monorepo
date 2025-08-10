@@ -17,11 +17,11 @@ module.exports = {
       },
       colors: {        
         'gray-custom': '#666666',
-        'purple-custom': '#7B61FF',
-        'blue-custom': '#3D91D7',
-        'blue-active': '#2566A6',        
-        'teal-custom': '#0FB5BA',
-        'green-custom': '#9FD070',
+        'purple-custom': '#8A318F',
+        'blue-custom': '#066285',
+        'blue-active': '#09204C',        
+        'teal-custom': '#20B5C9',
+        'green-custom': '#A6E3E3',
         'orange-custom': '#F7941D',
         'yellow-custom': '#F9CB28',
       }

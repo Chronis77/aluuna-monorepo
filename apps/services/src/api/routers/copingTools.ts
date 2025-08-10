@@ -46,10 +46,10 @@ export const copingToolsRouter = t.router({
         data: {
           user_id: input.userId,
           tool_name: input.toolName,
-          tool_category: input.toolCategory,
+          tool_category: input.toolCategory ?? null,
           effectiveness_rating: input.effectivenessRating || 5,
-          description: input.description,
-          when_to_use: input.whenToUse
+          description: input.description ?? null,
+          when_to_use: input.whenToUse ?? null
         }
       });
     }),
@@ -69,7 +69,14 @@ export const copingToolsRouter = t.router({
       const { toolId, ...updateData } = input;
       return await ctx.prisma.user_coping_tools.update({
         where: { id: toolId },
-        data: updateData
+        data: {
+          ...(updateData.description !== undefined && { description: updateData.description }),
+          ...(updateData.isActive !== undefined && { is_active: updateData.isActive }),
+          ...(updateData.toolName !== undefined && { tool_name: updateData.toolName }),
+          ...(updateData.toolCategory !== undefined && { tool_category: updateData.toolCategory }),
+          ...(updateData.effectivenessRating !== undefined && { effectiveness_rating: updateData.effectivenessRating }),
+          ...(updateData.whenToUse !== undefined && { when_to_use: updateData.whenToUse }),
+        }
       });
     }),
 
@@ -135,10 +142,10 @@ export const copingToolsRouter = t.router({
       });
 
       const totalTools = tools.length;
-      const highlyEffectiveTools = tools.filter(t => t.effectiveness_rating >= 8).length;
+      const highlyEffectiveTools = tools.filter(t => (t.effectiveness_rating ?? 0) >= 8).length;
       const categories = [...new Set(tools.map(t => t.tool_category).filter(Boolean))];
       const averageEffectiveness = tools.length > 0 
-        ? tools.reduce((sum, t) => sum + (t.effectiveness_rating || 0), 0) / tools.length 
+        ? tools.reduce((sum, t) => sum + (t.effectiveness_rating ?? 0), 0) / tools.length 
         : 0;
 
       return {

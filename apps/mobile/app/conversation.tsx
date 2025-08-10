@@ -29,7 +29,7 @@ import { useAuth } from '../context/AuthContext';
 import { config } from '../lib/config';
 import { ContextService } from '../lib/contextService';
 import { MemoryProcessingService } from '../lib/memoryProcessingService';
-import { Message as OpenAIMessage, OpenAIService } from '../lib/openaiService';
+import { Message as OpenAIMessage, ConversationResponseService as OpenAIService } from '../lib/conversationResponseService';
 import { ConversationService } from '../lib/conversationService';
 import { speechManager } from '../lib/speechManager';
 import { trpcClient } from '../lib/trpcClient';
@@ -77,15 +77,20 @@ export default function SessionScreen() {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
 
-  const [memoryProcessingStatus, setMemoryProcessingStatus] = useState<{
+  const [toolActivityStatus, setToolActivityStatus] = useState<{
     visible: boolean;
     message: string;
+    type: 'memory' | 'insight' | 'mantra' | 'coping' | 'goal' | 'theme' | 'relationship' | 'practice' | 'general';
   }>({
     visible: false,
     message: '',
+    type: 'general',
   });
 
-  const memoryProcessingTranslateY = useRef(new Animated.Value(-60)).current;
+  const toolActivityTranslateY = useRef(new Animated.Value(-60)).current;
+  // Queue to serialize tool activity notifications in the UI
+  const toolNotificationQueueRef = useRef<{ toolName: string; data?: any }[]>([]);
+  const isProcessingToolQueueRef = useRef(false);
 
   const sidebarTranslateX = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
   const profileMenuTranslateX = useRef(new Animated.Value(screenWidth)).current;
@@ -575,6 +580,12 @@ export default function SessionScreen() {
             // Scroll to show loading dots
             scrollToActualBottom();
           },
+          onToolCall: (toolName: string, toolData?: any) => {
+            console.log('🔧 Tool called:', toolName, toolData);
+            // Enqueue tool notifications to process sequentially
+            toolNotificationQueueRef.current.push({ toolName, data: toolData });
+            processToolNotificationQueue();
+          },
           onChunk: (chunk: string, isComplete: boolean) => {
             if (isComplete) {
               // Streaming complete
@@ -806,36 +817,64 @@ export default function SessionScreen() {
       console.log('- Conversation history length:', conversationHistory.length);
       
       if (shouldGenerateAI && (hasNoTitle || hasDefaultTitle) && !hasAISummary) {
-        console.log('Generating AI title and summary after 4+ interactions (replacing default title)');
+        console.log('Requesting server to generate title and summary after 4+ interactions');
         
-        // Generate new title and summary
-        const [newTitle, newSummary] = await Promise.all([
-          OpenAIService.generateSessionTitle(conversationHistory),
-          OpenAIService.generateSessionSummary(conversationHistory),
-        ]);
+        // Check if we're already generating a title to prevent duplicates
+        const isGeneratingKey = `generating_title_${currentConversation.id}`;
+        if ((globalThis as any)[isGeneratingKey]) {
+          console.log('Title generation already in progress, skipping...');
+          return;
+        }
+        (globalThis as any)[isGeneratingKey] = true;
+        
+        try {
+          const messages = conversationHistory
+            .filter(m => m.role === 'user' || m.role === 'assistant')
+            .map(m => ({ role: m.role as 'user'|'assistant', content: m.content }));
+          // Client log: about to request title/summary generation
+          try {
+            const last = messages[messages.length - 1]?.content || '';
+            const first = messages[0]?.content || '';
+            console.log('🟣 TS: Client requesting title/summary generation', {
+              userId: currentUserId,
+              conversationId: currentConversation.id,
+              messageCount: messages.length,
+              firstMessagePreview: first.slice(0, 120),
+              lastMessagePreview: last.slice(0, 120)
+            });
+          } catch (e) {
+            console.log('🟣 TS: Client logging of request payload failed (non-fatal)', e);
+          }
+          const { title: newTitle, summary: newSummary } = await trpcClient.generateConversationTitleAndSummary(currentUserId!, currentConversation.id, messages);
+          // Client log: received response from server
+          try {
+            console.log('🟣 TS: Client received title/summary from server', {
+              conversationId: currentConversation.id,
+              newTitle,
+              newSummaryPreview: (newSummary || '').slice(0, 200),
+              titleLength: newTitle?.length ?? 0,
+              summaryLength: newSummary?.length ?? 0
+            });
+          } catch (e) {
+            console.log('🟣 TS: Client logging of server response failed (non-fatal)', e);
+          }
 
-        console.log('Generated new title:', newTitle);
-        console.log('Generated new summary:', newSummary);
+          // Client log: saving to DB
+          try {
+            console.log('🟣 TS: Client saving title/summary to conversation', {
+              conversationId: currentConversation.id,
+              titleToSave: newTitle,
+              summaryPreviewToSave: (newSummary || '').slice(0, 200)
+            });
+          } catch {}
 
-        // Update conversation
-        await ConversationService.updateConversation(currentConversation.id, {
-          title: newTitle,
-          context_summary: newSummary,
-        });
-
-        console.log('Successfully updated conversation in database');
-
-        // Update local state
-        setCurrentConversation(prev => prev ? { ...prev, title: newTitle, context_summary: newSummary } : null);
-        setConversations(prev => 
-          prev.map(group => 
-            group.id === currentConversation.id 
-              ? { ...group, title: newTitle, context_summary: newSummary }
-              : group
-          )
-        );
-
-        console.log('Successfully updated local state');
+          await ConversationService.updateConversation(currentConversation.id, { title: newTitle, context_summary: newSummary });
+          setCurrentConversation(prev => prev ? { ...prev, title: newTitle, context_summary: newSummary } : null);
+          setConversations(prev => prev.map(group => group.id === currentConversation.id ? { ...group, title: newTitle, context_summary: newSummary } : group));
+          console.log('🟣 TS: Client title and summary persisted locally (and via server)');
+        } finally {
+          (globalThis as any)[isGeneratingKey] = false;
+        }
       } else if (hasNoTitle && !hasAISummary) {
         // Generate default title based on date if no title exists and no AI summary
         const defaultTitle = ContextService.generateSessionTitle(new Date(currentConversation.started_at));
@@ -1066,9 +1105,9 @@ export default function SessionScreen() {
   const renderMessage = ({ item }: { item: Message }) => {
     if (item.isThinking) {
       return (
-        <View className="mb-4 items-start px-5">
-          <View className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[80%]">
-            <ThreeDotLoader size={4} color="#6B7280" speed={600} />
+        <View className="mb-3 items-start px-5">
+          <View className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-2 max-w-[80%]">
+            <ThreeDotLoader size={3} color="#6B7280" speed={600} />
           </View>
         </View>
       );
@@ -1076,10 +1115,12 @@ export default function SessionScreen() {
 
     if (item.isStreaming) {
       return (
-        <View className="mb-4 items-start px-5">
-          <View className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[80%]">
-            <Text className="text-gray-800 text-base">{item.text}</Text>
-            <ThreeDotLoader size={4} color="#6B7280" speed={600} />
+        <View className="mb-3 items-start px-5">
+          <View className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-2 max-w-[80%]">
+            <View className="flex-row items-center">
+              <Text className="text-gray-800 text-base flex-1">{item.text}</Text>
+              <ThreeDotLoader size={3} color="#6B7280" speed={600} />
+            </View>
           </View>
         </View>
       );
@@ -1164,6 +1205,137 @@ export default function SessionScreen() {
     } catch (error) {
       console.error('Error in crisis detection:', error);
     }
+  };
+
+  // Internal: process the queued tool notifications one-by-one
+  const processToolNotificationQueue = () => {
+    if (isProcessingToolQueueRef.current) return;
+    if (toolNotificationQueueRef.current.length === 0) return;
+    isProcessingToolQueueRef.current = true;
+    const next = toolNotificationQueueRef.current.shift()!;
+    showToolActivityNotification(next.toolName, next.data).finally(() => {
+      isProcessingToolQueueRef.current = false;
+      // Defer to next frame to allow layout to settle
+      requestAnimationFrame(() => processToolNotificationQueue());
+    });
+  };
+
+  // Show tool activity notification (returns a promise to allow sequential chaining)
+  const showToolActivityNotification = async (toolName: string, data?: any) => {
+    let message = '';
+    let type: 'memory' | 'insight' | 'mantra' | 'coping' | 'goal' | 'theme' | 'relationship' | 'practice' | 'general' = 'general';
+
+    switch (toolName) {
+      case 'storeInsight':
+        message = 'New insight saved';
+        type = 'insight';
+        break;
+      case 'storeMantra':
+        message = 'New mantra added';
+        type = 'mantra';
+        break;
+      case 'storeCopingTool':
+        message = 'New coping tool saved';
+        type = 'coping';
+        break;
+      case 'storeGoal':
+        message = 'New goal added';
+        type = 'goal';
+        break;
+      case 'storeTheme':
+        message = 'New theme identified';
+        type = 'theme';
+        break;
+      case 'storeShadowTheme':
+        message = 'Shadow theme saved';
+        type = 'theme';
+        break;
+      case 'storePatternLoop':
+        message = 'Pattern loop saved';
+        type = 'theme';
+        break;
+      case 'storeRelationship':
+        message = 'Relationship details updated';
+        type = 'relationship';
+        break;
+      case 'storeSupportSystem':
+        message = 'Support person added';
+        type = 'relationship';
+        break;
+      case 'createDailyPractice':
+      case 'logDailyPractice':
+        message = 'Daily practice updated';
+        type = 'practice';
+        break;
+      case 'getMemoryProfile':
+        message = 'Loading your memory profile...';
+        type = 'memory';
+        break;
+      case 'setValuesCompass':
+        message = 'Value compass updated';
+        type = 'memory';
+        break;
+      case 'storeRegulationStrategy':
+        message = 'Regulation strategy saved';
+        type = 'coping';
+        break;
+      case 'storeDysregulatingFactor':
+        message = 'Dysregulating factor saved';
+        type = 'memory';
+        break;
+      case 'storeStrength':
+        message = 'Strength added';
+        type = 'memory';
+        break;
+      case 'memorySearch':
+        message = 'Searching your memories...';
+        type = 'memory';
+        break;
+      case 'logMoodTrend':
+        message = 'Mood trend logged';
+        type = 'general';
+        break;
+      case 'storeInnerPart':
+        message = 'Inner part added';
+        type = 'memory';
+        break;
+      default:
+        message = `${toolName} completed`;
+        type = 'general';
+    }
+
+    // Wrap in a promise to coordinate sequential display
+    await new Promise<void>((resolve) => {
+      // Defer state updates to avoid scheduling updates during insertion phase
+      requestAnimationFrame(() => {
+        setToolActivityStatus({
+          visible: true,
+          message,
+          type,
+        });
+
+        // Animate in
+        Animated.spring(toolActivityTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }).start();
+
+        // Auto-hide after 3 seconds
+        setTimeout(() => {
+          Animated.spring(toolActivityTranslateY, {
+            toValue: -60,
+            useNativeDriver: true,
+            tension: 100,
+            friction: 8,
+          }).start(() => {
+            setToolActivityStatus(prev => ({ ...prev, visible: false }));
+            resolve();
+          });
+        }, 3000);
+      });
+    });
   };
 
   // Get user memory data for insights and profile
@@ -1260,20 +1432,20 @@ export default function SessionScreen() {
           </View>
         </View>
 
-        {/* Memory Processing Status */}
-        {memoryProcessingStatus.visible && (
+        {/* Tool Activity Status */}
+        {toolActivityStatus.visible && (
           <Animated.View 
             className="absolute left-0 right-0"
             style={{
               top: 112, // Start at the very top
-              transform: [{ translateY: memoryProcessingTranslateY }],
+              transform: [{ translateY: toolActivityTranslateY }],
               zIndex: 5
             }}
           >
             <View className="bg-white border-b border-gray-200 shadow-sm">
               <View className="flex-row items-center justify-center px-4 py-3">
                 <AluunaLoader 
-                  message={memoryProcessingStatus.message}
+                  message={toolActivityStatus.message}
                   size="small"
                   showMessage={true}
                   containerClassName="flex-row items-center"

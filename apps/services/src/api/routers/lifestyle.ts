@@ -45,10 +45,10 @@ export const lifestyleRouter = t.router({
         data: {
           user_id: input.userId,
           habit_name: input.habitName,
-          habit_category: input.habitCategory,
-          frequency: input.frequency,
+          ...(input.habitCategory !== undefined && { habit_category: input.habitCategory }),
+          ...(input.frequency !== undefined && { frequency: input.frequency }),
           consistency_level: input.consistencyLevel || 5,
-          impact_on_wellbeing: input.impactOnWellbeing
+          ...(input.impactOnWellbeing !== undefined && { impact_on_wellbeing: input.impactOnWellbeing })
         }
       });
     }),
@@ -68,7 +68,14 @@ export const lifestyleRouter = t.router({
       const { habitId, ...updateData } = input;
       return await ctx.prisma.user_daily_habits.update({
         where: { id: habitId },
-        data: updateData
+        data: {
+          ...(updateData.habitName !== undefined && { habit_name: updateData.habitName }),
+          ...(updateData.habitCategory !== undefined && { habit_category: updateData.habitCategory }),
+          ...(updateData.frequency !== undefined && { frequency: updateData.frequency }),
+          ...(updateData.consistencyLevel !== undefined && { consistency_level: updateData.consistencyLevel }),
+          ...(updateData.impactOnWellbeing !== undefined && { impact_on_wellbeing: updateData.impactOnWellbeing }),
+          ...(updateData.isActive !== undefined && { is_active: updateData.isActive })
+        }
       });
     }),
 
@@ -100,10 +107,22 @@ export const lifestyleRouter = t.router({
       const { userId, ...data } = input;
       return await ctx.prisma.user_sleep_routine.upsert({
         where: { user_id: userId },
-        update: data,
+        update: {
+          ...(data.bedtime !== undefined && { bedtime: data.bedtime }),
+          ...(data.wakeTime !== undefined && { wake_time: data.wakeTime }),
+          ...(data.sleepDurationHours !== undefined && { sleep_duration_hours: data.sleepDurationHours }),
+          ...(data.sleepQualityRating !== undefined && { sleep_quality_rating: data.sleepQualityRating }),
+          ...(data.sleepHygienePractices !== undefined && { sleep_hygiene_practices: data.sleepHygienePractices }),
+          ...(data.sleepIssues !== undefined && { sleep_issues: data.sleepIssues })
+        },
         create: {
           user_id: userId,
-          ...data
+          ...(data.bedtime !== undefined && { bedtime: data.bedtime }),
+          ...(data.wakeTime !== undefined && { wake_time: data.wakeTime }),
+          ...(data.sleepDurationHours !== undefined && { sleep_duration_hours: data.sleepDurationHours }),
+          ...(data.sleepQualityRating !== undefined && { sleep_quality_rating: data.sleepQualityRating }),
+          ...(data.sleepHygienePractices !== undefined && { sleep_hygiene_practices: data.sleepHygienePractices }),
+          ...(data.sleepIssues !== undefined && { sleep_issues: data.sleepIssues })
         }
       });
     }),

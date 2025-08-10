@@ -1,9 +1,7 @@
 import { AIResponseRulesService } from './aiResponseRules';
 import { config, validateConfig } from './config';
-import { MemoryUpdateService } from './memoryUpdateService';
 import { PromptOptimizer } from './promptOptimizer';
 import { websocketService } from './websocketService';
-import { MemoryProcessingService } from './memoryProcessingService';
 import { ConversationService } from './conversationService';
 
 
@@ -23,70 +21,30 @@ export interface SessionContext {
 const promptCache = new Map<string, any>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-export class OpenAIService {
-  static cleanJsonResponse(response: string): string {
-    // Remove any text before the first {
-    const jsonStart = response.indexOf('{');
-    if (jsonStart > 0) {
-      response = response.substring(jsonStart);
-    }
-    
-    // Remove any text after the last }
-    const jsonEnd = response.lastIndexOf('}');
-    if (jsonEnd !== -1 && jsonEnd < response.length - 1) {
-      response = response.substring(0, jsonEnd + 1);
-    }
-    
-    // Fix common JSON formatting issues
-    response = response
-      .replace(/,\s*}/g, '}') // Remove trailing commas
-      .replace(/,\s*]/g, ']') // Remove trailing commas in arrays
-      .replace(/true or false/g, 'false') // Fix boolean values
-      .replace(/null or ".*?"/g, 'null') // Fix null values
-      .replace(/"null"/g, 'null') // Fix quoted null
-      .replace(/"true"/g, 'true') // Fix quoted booleans
-      .replace(/"false"/g, 'false'); // Fix quoted booleans
-    
-    return response;
-  }
+export class ConversationResponseService {
 
   static async makeRequest(messages: Message[], temperature: number = 0.7): Promise<string> {
-    if (!validateConfig()) {
-      throw new Error('OpenAI API key not configured');
-    }
+    // Force mobile to use server WebSocket path for AI; do not call OpenAI directly
+    const sessionContext: any = {};
+    const conversationHistory = messages.filter(m => m.role !== 'system');
+    const userMessage = messages[messages.length - 1]?.content || '';
+    const sessionId = `ws-${Date.now()}`;
+    const messageId = `msg-${Date.now()}`;
 
-    const requestBody = {
-      model: 'gpt-4',
-      messages,
-      temperature,
-      max_tokens: 600, // Reduced for faster response
-      presence_penalty: 0.1, // Slight penalty for repetition
-      frequency_penalty: 0.1, // Slight penalty for repetition
-    };
-
-    // Reduced logging for performance
-    console.log('OpenAI request sent');
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.openai.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data.choices[0]?.message?.content || '';
+    const response = await this.generateStreamingResponse(
+      userMessage,
+      sessionContext,
+      conversationHistory,
+      sessionId,
+      messageId,
+      messageId,
+      {}
+    );
+    return response.response;
   }
 
   // Generate a three-word summary for a session group
-  static async generateSessionTitle(messages: Message[]): Promise<string> {
+  static async generateSessionTitle(messages: Message[], userId?: string): Promise<string> {
     const systemPrompt = `You are a helpful assistant that creates concise, three-word titles for therapy sessions. 
     Based on the conversation, create a title that captures the main theme or focus of the session.
     Return only the three words, separated by spaces, nothing else. No quotes, no punctuation.`;
@@ -101,9 +59,8 @@ export class OpenAIService {
     try {
       // Use WebSocket for title generation to avoid React Native compatibility issues
       const title = await this.generateViaWebSocket([
-        { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
-      ], 0.3);
+      ], 0.3, userId, 'title_generation');
 
       // Clean up the title - remove quotes and extra whitespace
       const cleanTitle = title.trim()
@@ -120,7 +77,7 @@ export class OpenAIService {
   }
 
   // Generate a summary for a session group
-  static async generateSessionSummary(messages: Message[]): Promise<string> {
+  static async generateSessionSummary(messages: Message[], userId?: string): Promise<string> {
     const systemPrompt = `You are a therapeutic AI assistant. Create a brief, empathetic summary of this therapy session that captures the key themes, emotions, and insights discussed. 
     Focus on the client's experience and any progress or challenges mentioned. Keep it under 50 words.`;
 
@@ -134,9 +91,8 @@ export class OpenAIService {
     try {
       // Use WebSocket for summary generation to avoid React Native compatibility issues
       const summary = await this.generateViaWebSocket([
-        { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
-      ], 0.5);
+      ], 0.5, userId, 'summary_generation');
 
       return summary.trim();
     } catch (error) {
@@ -146,7 +102,7 @@ export class OpenAIService {
   }
 
   // Helper method to generate responses via WebSocket instead of direct API calls
-  static async generateViaWebSocket(messages: Message[], temperature: number = 0.7): Promise<string> {
+  static async generateViaWebSocket(messages: Message[], temperature: number = 0.7, userId?: string, mode?: string): Promise<string> {
     try {
       // Ensure WebSocket connection
       if (!websocketService.isSocketConnected()) {
@@ -194,14 +150,15 @@ export class OpenAIService {
         // Prepare WebSocket request
         const wsRequest = {
           userMessage: messages[messages.length - 1].content,
-          sessionContext: {},
+          currentContext: {},
           conversationHistory: messages.slice(0, -1), // All messages except the last one
           sessionId: 'title-summary-session',
           messageId,
-          systemPrompt: messages[0].content,
+          mode,
           temperature,
           maxTokens: 100
         };
+        if (userId) (wsRequest as any).userId = userId;
 
         // Send the request
         websocketService.sendTrueStreamingRequest(wsRequest).catch((error) => {
@@ -302,50 +259,14 @@ export class OpenAIService {
       // Use WebSocket for structured response to avoid React Native compatibility issues
       const response = await this.generateViaWebSocket(messages, 0.3);
       
-      // Try to parse the response as JSON
-      let structuredData;
-      try {
-        const cleanedResponse = this.cleanJsonResponse(response.trim());
-        structuredData = JSON.parse(cleanedResponse);
-      } catch (parseError) {
-        // Try to extract JSON from the response if it's wrapped in text
-        const jsonMatch = response.trim().match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          try {
-            const cleanedJson = this.cleanJsonResponse(jsonMatch[0]);
-            structuredData = JSON.parse(cleanedJson);
-          } catch (secondParseError) {
-            return { response: response.trim() };
-          }
-        } else {
-          return { response: response.trim() };
-        }
-      }
-
-      // Validate that we have the required fields
-      if (!structuredData.response) {
-        return { response: response.trim() };
-      }
-
       // Validate response against rules
-      const validation = AIResponseRulesService.validateResponse(structuredData.response);
+      const validation = AIResponseRulesService.validateResponse(response.trim());
       if (!validation.isValid) {
         console.warn('Response validation failed:', validation.issues);
       }
 
-      // Update user's memory profile asynchronously (don't await)
-      if (sessionContext.userProfile?.user_id) {
-        MemoryUpdateService.processStructuredResponse(
-          sessionContext.userProfile.user_id,
-          structuredData
-        ).catch(error => {
-          console.error('Error updating memory profile:', error);
-        });
-      }
-
       return {
-        response: structuredData.response,
-        structuredData
+        response: response.trim()
       };
     } catch (error) {
       console.error('Error generating structured AI response:', error);
@@ -366,6 +287,7 @@ export class OpenAIService {
       onChunk?: (chunk: string, isComplete: boolean) => void;
       onComplete?: (fullResponse: string, structuredData?: any) => void;
       onError?: (error: string) => void;
+      onToolCall?: (toolName: string, toolData?: any) => void;
     }
   ): Promise<{ response: string; structuredData?: any; error?: string }> {
     console.log('🔍 GENERATE STREAMING RESPONSE CALLED - FUNCTION START');
@@ -383,34 +305,21 @@ export class OpenAIService {
 
       console.log('🤖 Sending streaming AI request via WebSocket...');
 
-      // Build the system prompt using AIResponseRules
-      const systemPrompt = AIResponseRulesService.buildDynamicPrompt(sessionContext, userMessage);
-      
-      // Encode the system prompt with Base64 for secure transmission
-      const encodedSystemPrompt = btoa(unescape(encodeURIComponent(systemPrompt)));
-      
-      console.log('🔍 System prompt length:', systemPrompt.length, 'characters');
-      console.log('🔍 Encoded system prompt length:', encodedSystemPrompt.length, 'characters');
-      console.log('🔍 System prompt contains delimiter instructions:', systemPrompt.includes('===METADATA_START==='));
-      console.log('🔍 System prompt contains "CRITICAL" instruction:', systemPrompt.includes('CRITICAL'));
-      console.log('🔍 System prompt contains "MANDATORY":', systemPrompt.includes('MANDATORY'));
-
-      // Prepare WebSocket request with encoded system prompt
+      // Prepare minimal WebSocket request (server builds system prompt + MCP)
       const wsRequest = {
         userMessage,
-        sessionContext,
+        currentContext: sessionContext,
         conversationHistory,
         sessionId,
         messageId,
-        systemPrompt: encodedSystemPrompt,
-        systemPromptEncoded: true,
         temperature: 0.3
       };
+      // Include userId for server-side MCP building
+      (wsRequest as any).userId = sessionContext?.userProfile?.user_id || 'default-user-id';
 
       console.log('🔍 REACHED WEB SOCKET REQUEST PREPARATION');
       console.log('🔍 WebSocket request being sent:');
       console.log('🔍 Request keys:', Object.keys(wsRequest));
-      console.log('🔍 System prompt length:', systemPrompt.length);
       console.log('🔍 User message:', wsRequest.userMessage);
       console.log('---START OF WEBSOCKET REQUEST---');
       console.log(JSON.stringify(wsRequest, null, 2));
@@ -427,7 +336,8 @@ export class OpenAIService {
         const handleStreamingMessage = async (message: any) => {
           if (message.messageId !== messageId) return;
 
-          console.log('🔍 RECEIVED MESSAGE:', JSON.stringify(message, null, 2));
+          // This is to output the chunks to the console
+          //console.log('🔍 RECEIVED MESSAGE:', JSON.stringify(message, null, 2));
 
           switch (message.type) {
             case 'start':
@@ -436,125 +346,21 @@ export class OpenAIService {
               break;
 
             case 'token':
-              console.log('🔍 TOKEN CASE REACHED - token:', JSON.stringify(message.token));
-              
-              // Use the token directly (no encryption for streaming)
-              let decryptedToken = message.token;
-              
-              // Check if adding this token would create the delimiter
-              const potentialResponse = fullResponse + decryptedToken;
-              
-              // Debug: Log every token to see what's coming in
-              console.log('🔍 Token received:', JSON.stringify(message.token));
-              console.log('🔍 Current fullResponse length:', fullResponse.length);
-              console.log('🔍 Current fullResponse ends with:', fullResponse.substring(Math.max(0, fullResponse.length - 20)));
-              console.log('🔍 Potential response ends with:', potentialResponse.substring(Math.max(0, potentialResponse.length - 30)));
-              
-              // Check if we're building up the delimiter
-              if (message.token.includes('===') || message.token.includes('METADATA') || message.token.includes('START')) {
-                console.log('🔍 POTENTIAL DELIMITER TOKEN DETECTED:', JSON.stringify(message.token));
-                console.log('🔍 Full potential response:', potentialResponse);
-              }
-              
-              // Update fullResponse for tracking
-              fullResponse = potentialResponse;
-              
-              // Check for complete delimiter
-              console.log('🔍 Checking for delimiter in potential response...');
-              console.log('🔍 Looking for: ===METADATA_START===');
-              console.log('🔍 Potential response contains delimiter:', potentialResponse.includes('===METADATA_START==='));
-              
-              if (potentialResponse.includes('===METADATA_START===')) {
-                console.log('🎉 DELIMITER FOUND! 🎉');
-                console.log('🔍 Delimiter found at index:', potentialResponse.indexOf('===METADATA_START==='));
-                
-                if (!metadataFound) {
-                  metadataFound = true;
-                  console.log('🔍 Setting metadataFound = true');
-                  
-                  // Find where the delimiter starts
-                  const delimiterIndex = potentialResponse.indexOf('===METADATA_START===');
-                  console.log('🔍 Delimiter index:', delimiterIndex);
-                  
-                  // Only send the part before the delimiter
-                  const contentBeforeDelimiter = potentialResponse.substring(0, delimiterIndex);
-                  console.log('🔍 Content before delimiter length:', contentBeforeDelimiter.length);
-                  console.log('🔍 Content before delimiter:', contentBeforeDelimiter);
-                  
-                  // Send any remaining content before delimiter
-                  if (contentBeforeDelimiter.length > displayContent.length) {
-                    const remainingContent = contentBeforeDelimiter.substring(displayContent.length);
-                    console.log('🔍 Remaining content to send:', remainingContent);
-                    if (remainingContent.length > 0) {
-                      callbacks.onChunk?.(remainingContent, false);
-                    }
-                  }
-                  
-                  // Set the final user response
-                  userResponse = contentBeforeDelimiter.trim();
-                  console.log('🔍 Set userResponse to:', userResponse);
-                  
-                  // Mark as complete immediately
-                  callbacks.onChunk?.('', true);
-                  console.log('🔍 Called onChunk with empty string and isComplete=true');
-                  
-                  // Don't send any more tokens to UI
-                  break;
-                }
-              } else {
-                // Check for partial delimiter that might be building up
-                const partialDelimiters = [
-                  '===METADATA_START',
-                  '===METADATA_STAR',
-                  '===METADATA_STA',
-                  '===METADATA_ST',
-                  '===METADATA_S',
-                  '===METADATA_',
-                  '===METADATA',
-                  '===METADAT',
-                  '===METADA',
-                  '===METAD',
-                  '===META',
-                  '===MET',
-                  '===ME',
-                  '===M',
-                  '===',
-                  '==',
-                  '='
-                ];
-                
-                // If we detect a partial delimiter, don't send this token to UI
-                const hasPartialDelimiter = partialDelimiters.some(partial => 
-                  potentialResponse.endsWith(partial)
-                );
-                
-                if (hasPartialDelimiter) {
-                  console.log('🔍 PARTIAL DELIMITER DETECTED!');
-                  console.log('🔍 Token being held:', message.token);
-                  console.log('🔍 Potential response ends with:', potentialResponse.substring(Math.max(0, potentialResponse.length - 30)));
-                  console.log('🔍 Matching partial delimiter found');
-                  // Don't send this token to UI, but keep it in fullResponse for tracking
-                  break;
-                } else {
-                  console.log('🔍 No partial delimiter detected, proceeding normally');
-                }
-                
-                // Debug: Log if we see any "===" patterns
-                if (message.token.includes('===')) {
-                  console.log('🔍 Found === in token:', JSON.stringify(message.token));
-                }
-                
-                // No delimiter found yet, send token normally
-                displayContent += message.token;
-                callbacks.onChunk?.(message.token, false);
-              }
+              // Append token and forward to UI without delimiter logic
+              const token = typeof message.token === 'string' ? message.token : '';
+              fullResponse += token;
+              displayContent += token;
+              callbacks.onChunk?.(token, false);
+              break;
+
+            case 'tool_call':
+              console.log('🔧 Tool called:', message.toolName, message.toolData);
+              callbacks.onToolCall?.(message.toolName, message.toolData);
               break;
 
             case 'done':
               console.log('✅ AI streaming completed - DONE CASE REACHED');
-              console.log('🔍 Metadata found:', metadataFound);
               console.log('📝 Full response length:', fullResponse.length);
-              console.log('📝 Full response contains delimiter:', fullResponse.includes('===METADATA_START==='));
               console.log('🔍 TEST LOG - CAN YOU SEE THIS?');
               console.log('🔍 Full response type:', typeof fullResponse);
               console.log('🔍 Full response is empty?', fullResponse.length === 0);
@@ -568,33 +374,16 @@ export class OpenAIService {
                 console.log(`📝 CHUNK ${Math.floor(i/chunkSize) + 1}:`, chunk);
               }
               console.log('---END OF RESPONSE---');
-              
-              // Process metadata and save session
-              if (metadataFound) {
-                console.log('🚀 Calling processMetadataAndSaveSession...');
-                this.processMetadataAndSaveSession(
-                  fullResponse,
-                  sessionContext,
-                  sessionId,
-                  sessionRecordId,
-                  conversationHistory,
-                  userResponse
-                ).catch(error => {
-                  console.error('Error processing metadata:', error);
-                });
-              } else {
-                console.log('⚠️ No metadata found, skipping processing');
-              }
+              // No metadata processing on client; use the full response for saving
               
               callbacks.onChunk?.('', true);
-              callbacks.onComplete?.(userResponse || displayContent);
+              callbacks.onComplete?.(displayContent || fullResponse);
               
               // Clean up
               websocketService.offTrueStreamingMessage(handleStreamingMessage);
               
               resolve({
-                response: userResponse || displayContent,
-                structuredData: null // Will be processed asynchronously
+                response: displayContent || fullResponse
               });
               break;
 
@@ -635,59 +424,7 @@ export class OpenAIService {
     }
   }
 
-  // Process metadata and save session asynchronously
-  private static async processMetadataAndSaveSession(
-    fullResponse: string,
-    sessionContext: SessionContext,
-    sessionId: string,
-    sessionRecordId: string,
-    conversationHistory: Message[],
-    userResponse: string
-  ): Promise<void> {
-    try {
-                  console.log('🔍 Processing metadata from full response...');
-            console.log('📝 Full AI response length:', fullResponse.length);
-            console.log('📝 Full AI response contains delimiter:', fullResponse.includes('===METADATA_START==='));
-            console.log('📝 Full AI response ends with:', fullResponse.substring(Math.max(0, fullResponse.length - 50)));
-            console.log('📝 FULL AI RESPONSE CONTENT:');
-            console.log('---START OF RESPONSE---');
-            console.log(fullResponse);
-            console.log('---END OF RESPONSE---');
-            const parts = fullResponse.split('===METADATA_START===');
-            const metadataJson = parts[1]?.trim();
-      
-      if (metadataJson) {
-        console.log('📋 Found metadata JSON:', metadataJson.substring(0, 200) + '...');
-        
-        const structuredData = JSON.parse(metadataJson);
-        console.log('✅ Parsed structured data:', JSON.stringify(structuredData, null, 2));
-        
-        // Process structured data
-        console.log('🔍 Session context:', {
-          userProfile: sessionContext.userProfile,
-          userId: sessionContext.userProfile?.user_id,
-          sessionId: sessionRecordId,
-          sessionGroupId: sessionId
-        });
-        
-        console.log('🚀 Memory processing temporarily disabled to fix circular dependency');
-        
-        // Session progress tracking is now handled by the calling code
-        console.log('📊 Session progress tracking delegated to calling code');
-        
-        console.log('✅ Memory processing and session tracking completed');
-      } else {
-        console.log('⚠️ No metadata found in response');
-      }
-      
-      // Save session with response
-      await ConversationService.updateConversationMessageWithResponse(sessionRecordId, userResponse);
-      
-      console.log('✅ Session metadata processed and saved');
-    } catch (error) {
-      console.error('❌ Error processing metadata:', error);
-    }
-  }
+
 
   // Base64 encoding/decoding methods for secure transmission
   private static encodeBase64(text: string): string {
@@ -783,4 +520,6 @@ export class OpenAIService {
   }
 }`;
   }
-} 
+}
+
+

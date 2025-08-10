@@ -45,9 +45,9 @@ const getServerUrl = () => {
 // Configuration for API keys and environment variables
 export const config = {
   openai: {
-    apiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY || '',
-    whisperEndpoint: 'https://api.openai.com/v1/audio/transcriptions',
-    gptEndpoint: 'https://api.openai.com/v1/chat/completions',
+    apiKey: '', // disabled on mobile; server handles all OpenAI calls
+    whisperEndpoint: '',
+    gptEndpoint: '',
   },
   supabase: {
     url: process.env.EXPO_PUBLIC_SUPABASE_URL || '',
@@ -59,7 +59,6 @@ export const config = {
   },
   tts: {
     apiKey: process.env.EXPO_PUBLIC_ALUUNA_APP_API_KEY || '', // Aluuna app API key
-    endpoint: 'https://api-inference.huggingface.co/models/facebook/fastspeech2-en-ljspeech',
     serverUrl: process.env.EXPO_PUBLIC_TTS_SERVER_URL || 'https://aluuna-services-production.up.railway.app', // Deployed Railway services server
     timeout: parseInt(process.env.EXPO_PUBLIC_TTS_TIMEOUT || '10000'), // Increased timeout for Railway
   },
@@ -69,7 +68,23 @@ export const config = {
     sessionTimeout: parseInt(process.env.EXPO_PUBLIC_SESSION_TIMEOUT || '3000'), // Session timeout
   },
   websocket: {
-    url: process.env.EXPO_PUBLIC_WEBSOCKET_URL || 'https://aluuna-services-production.up.railway.app', // WebSocket server URL (HTTP for Socket.IO)
+    url: (() => {
+      // Prefer dev server in development if provided
+      if (__DEV__ && process.env.EXPO_PUBLIC_DEV_SERVER_URL) {
+        console.log(`🔧 Using development WebSocket URL: ${process.env.EXPO_PUBLIC_DEV_SERVER_URL}`);
+        return process.env.EXPO_PUBLIC_DEV_SERVER_URL;
+      }
+      if (process.env.EXPO_PUBLIC_WEBSOCKET_URL) {
+        console.log(`🌐 Using explicit WebSocket URL: ${process.env.EXPO_PUBLIC_WEBSOCKET_URL}`);
+        return process.env.EXPO_PUBLIC_WEBSOCKET_URL;
+      }
+      if (process.env.EXPO_PUBLIC_SERVER_URL) {
+        console.log(`🌐 Using production WebSocket URL: ${process.env.EXPO_PUBLIC_SERVER_URL}`);
+        return process.env.EXPO_PUBLIC_SERVER_URL;
+      }
+      console.log('⚠️ Falling back to localhost WebSocket URL: http://localhost:3000');
+      return 'http://localhost:3000';
+    })(),
     timeout: parseInt(process.env.EXPO_PUBLIC_WEBSOCKET_TIMEOUT || '20000'), // WebSocket connection timeout
   },
 };

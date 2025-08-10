@@ -19,10 +19,10 @@ export function ProfileMenu({
   onboardingSkipped = false
 }: ProfileMenuProps) {
   const profileMenuItems = [
-    { title: 'Emotion Trends', icon: 'trending-up', color: '#7B61FF' }, // purple-custom
-    { title: 'Insights', icon: 'lightbulb', color: '#3D91D7' }, // blue-custom
-    { title: 'Mantras', icon: 'self-improvement', color: '#0FB5BA' }, // teal-custom
-    { title: 'Memory Profile', icon: 'psychology', color: '#9FD070' }, // green-custom
+    { title: 'Emotion Trends', icon: 'trending-up', color: '#8A318F' }, // purple-custom
+    { title: 'Insights', icon: 'lightbulb', color: '#066285' }, // blue-custom
+    { title: 'Mantras', icon: 'self-improvement', color: '#20B5C9' }, // teal-custom
+    { title: 'Memory Profile', icon: 'psychology', color: '#A6E3E3' }, // green-custom
     { title: 'Relationships', icon: 'people', color: '#F7941D' }, // orange-custom
     { title: 'Feedback History', icon: 'feedback', color: '#8B5CF6' }, // purple
     { title: 'Settings', icon: 'settings', color: '#F9CB28' }, // yellow-custom

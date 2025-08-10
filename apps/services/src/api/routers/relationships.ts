@@ -45,10 +45,10 @@ export const relationshipsRouter = t.router({
         data: {
           user_id: input.userId,
           name: input.name,
-          relationship_type: input.relationshipType,
-          role: input.role,
-          importance_level: input.importanceLevel || 5,
-          notes: input.notes
+          relationship_type: input.relationshipType ?? null,
+          role: input.role ?? null,
+          importance_level: input.importanceLevel ?? 5,
+          notes: input.notes ?? null,
         }
       });
     }),
@@ -65,10 +65,18 @@ export const relationshipsRouter = t.router({
       isActive: z.boolean().optional()
     }))
     .mutation(async ({ ctx, input }) => {
-      const { personId, ...updateData } = input;
+      const { personId } = input;
+      const data: any = {};
+      if (input.name !== undefined) data.name = input.name;
+      if (input.relationshipType !== undefined) data.relationship_type = input.relationshipType ?? null;
+      if (input.role !== undefined) data.role = input.role ?? null;
+      if (input.importanceLevel !== undefined) data.importance_level = input.importanceLevel ?? null;
+      if (input.notes !== undefined) data.notes = input.notes ?? null;
+      if (input.isActive !== undefined) data.is_active = input.isActive;
+
       return await ctx.prisma.user_people.update({
         where: { id: personId },
-        data: updateData
+        data
       });
     }),
 
@@ -93,10 +101,11 @@ export const relationshipsRouter = t.router({
       isActive: z.boolean().optional()
     }))
     .query(async ({ ctx, input }) => {
-      const where: any = { user_id: input.userId };
-      if (input.isActive !== undefined) {
-        where.is_active = input.isActive;
-      }
+      const where: any = {
+        user_id: input.userId,
+        // default to active relationships when not specified
+        is_active: input.isActive !== undefined ? input.isActive : true,
+      };
       
       return await ctx.prisma.user_relationships.findMany({
         where,
@@ -117,8 +126,8 @@ export const relationshipsRouter = t.router({
         data: {
           user_id: input.userId,
           name: input.name,
-          role: input.role,
-          notes: input.notes
+          role: input.role ?? null,
+          notes: input.notes ?? null,
         }
       });
     }),
@@ -133,11 +142,25 @@ export const relationshipsRouter = t.router({
       isActive: z.boolean().optional()
     }))
     .mutation(async ({ ctx, input }) => {
-      const { relationshipId, ...updateData } = input;
+      const { relationshipId } = input;
+      const data: any = {};
+      if (input.name !== undefined) data.name = input.name;
+      if (input.role !== undefined) data.role = input.role ?? null;
+      if (input.notes !== undefined) data.notes = input.notes ?? null;
+      if (input.isActive !== undefined) data.is_active = input.isActive;
+
       return await ctx.prisma.user_relationships.update({
         where: { id: relationshipId },
-        data: updateData
+        data
       });
+    }),
+
+  // Delete a relationship (hard delete)
+  deleteRelationship: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.prisma.user_relationships.delete({ where: { id: input.id } });
+      return { success: true };
     }),
 
   // ===== RELATIONSHIP DYNAMICS =====
@@ -179,10 +202,10 @@ export const relationshipsRouter = t.router({
         data: {
           user_id: input.userId,
           relationship_type: input.relationshipType,
-          dynamic_pattern: input.dynamicPattern,
-          communication_style: input.communicationStyle,
-          conflict_resolution: input.conflictResolution,
-          emotional_safety_level: input.emotionalSafetyLevel || 5
+          dynamic_pattern: input.dynamicPattern ?? null,
+          communication_style: input.communicationStyle ?? null,
+          conflict_resolution: input.conflictResolution ?? null,
+          emotional_safety_level: input.emotionalSafetyLevel ?? 5,
         }
       });
     }),
@@ -222,10 +245,10 @@ export const relationshipsRouter = t.router({
         data: {
           user_id: input.userId,
           person_name: input.personName,
-          relationship_type: input.relationshipType,
-          support_type: input.supportType,
-          reliability_level: input.reliabilityLevel || 5,
-          contact_info: input.contactInfo
+          relationship_type: input.relationshipType ?? null,
+          support_type: input.supportType || [],
+          reliability_level: input.reliabilityLevel ?? 5,
+          contact_info: input.contactInfo ?? null,
         }
       });
     }),
@@ -242,10 +265,18 @@ export const relationshipsRouter = t.router({
       isActive: z.boolean().optional()
     }))
     .mutation(async ({ ctx, input }) => {
-      const { supportId, ...updateData } = input;
+      const { supportId } = input;
+      const data: any = {};
+      if (input.personName !== undefined) data.person_name = input.personName;
+      if (input.relationshipType !== undefined) data.relationship_type = input.relationshipType ?? null;
+      if (input.supportType !== undefined) data.support_type = input.supportType ?? [];
+      if (input.reliabilityLevel !== undefined) data.reliability_level = input.reliabilityLevel ?? null;
+      if (input.contactInfo !== undefined) data.contact_info = input.contactInfo ?? null;
+      if (input.isActive !== undefined) data.is_active = input.isActive;
+
       return await ctx.prisma.user_support_system.update({
         where: { id: supportId },
-        data: updateData
+        data
       });
     }),
 
@@ -274,14 +305,29 @@ export const relationshipsRouter = t.router({
       strengths: z.array(z.string()).optional()
     }))
     .mutation(async ({ ctx, input }) => {
-      const { userId, ...data } = input;
+      const { userId } = input;
+      const updateData: any = {};
+      if (input.currentStatus !== undefined) updateData.current_status = input.currentStatus ?? null;
+      if (input.partnerName !== undefined) updateData.partner_name = input.partnerName ?? null;
+      if (input.relationshipDuration !== undefined) updateData.relationship_duration = input.relationshipDuration ?? null;
+      if (input.satisfactionLevel !== undefined) updateData.satisfaction_level = input.satisfactionLevel ?? null;
+      if (input.challenges !== undefined) updateData.challenges = input.challenges ?? [];
+      if (input.strengths !== undefined) updateData.strengths = input.strengths ?? [];
+
+      const createData: any = {
+        user_id: userId,
+        current_status: input.currentStatus ?? null,
+        partner_name: input.partnerName ?? null,
+        relationship_duration: input.relationshipDuration ?? null,
+        satisfaction_level: input.satisfactionLevel ?? null,
+        challenges: input.challenges ?? [],
+        strengths: input.strengths ?? [],
+      };
+
       return await ctx.prisma.user_relationship_status.upsert({
         where: { user_id: userId },
-        update: data,
-        create: {
-          user_id: userId,
-          ...data
-        }
+        update: updateData,
+        create: createData,
       });
     }),
 
@@ -324,14 +370,14 @@ export const relationshipsRouter = t.router({
       ]);
 
       const totalPeople = people.length;
-      const highImportancePeople = people.filter(p => p.importance_level >= 8).length;
+      const highImportancePeople = people.filter(p => (p.importance_level ?? 0) >= 8).length;
       const relationshipTypes = [...new Set(people.map(p => p.relationship_type).filter(Boolean))];
       const averageImportance = people.length > 0 
         ? people.reduce((sum, p) => sum + (p.importance_level || 0), 0) / people.length 
         : 0;
 
-      const highSafetyDynamics = dynamics.filter(d => d.emotional_safety_level >= 8).length;
-      const reliableSupport = supportSystem.filter(s => s.reliability_level >= 8).length;
+      const highSafetyDynamics = dynamics.filter(d => (d.emotional_safety_level ?? 0) >= 8).length;
+      const reliableSupport = supportSystem.filter(s => (s.reliability_level ?? 0) >= 8).length;
 
       return {
         // People

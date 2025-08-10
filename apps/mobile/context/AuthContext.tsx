@@ -99,24 +99,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    // Test server connection on startup
-    const testConnection = async () => {
-      try {
-        console.log('🧪 Testing server connection on startup...');
-        const result = await trpcClient.testConnection();
-        if (result.success) {
-          console.log('✅ Server connection successful on startup');
-        } else {
-          console.error('❌ Server connection failed on startup:', result.error);
-        }
-      } catch (error) {
-        console.error('❌ Connection test error on startup:', error);
-      }
-    };
-    
-    testConnection();
     loadSession();
   }, []);
+
+  // Test server connection separately after session is loaded
+  useEffect(() => {
+    if (!isLoading) {
+      const testConnection = async () => {
+        try {
+          console.log('🧪 Testing server connection on startup...');
+          const result = await trpcClient.testConnection();
+          if (result.success) {
+            console.log('✅ Server connection successful on startup');
+          } else {
+            console.error('❌ Server connection failed on startup:', result.error);
+          }
+        } catch (error) {
+          console.error('❌ Connection test error on startup:', error);
+        }
+      };
+      
+      testConnection();
+    }
+  }, [isLoading]);
 
   const storeAuthData = async (user: User, tokens: { token: string; refreshToken: string }) => {
     try {

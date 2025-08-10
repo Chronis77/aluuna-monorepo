@@ -11,6 +11,7 @@ import { logger } from './utils/logger.js';
 import { redis } from './cache/redis.js';
 import { prisma } from './db/client.js';
 import authRoutes from './routes/authRoutes.js';
+import ttsRoutes from './routes/ttsRoutes.js';
 // import OpenAI from 'openai';
 import { extractTokenFromHeader, verifyToken } from './utils/authUtils.js';
 import { initQdrantFromEnv } from './vector/qdrant.js';
@@ -18,14 +19,15 @@ import { setVectorStore } from './vector/vectorStore.js';
 import { getEmbeddingDimension } from './openai/embeddings.js';
 import { handleResponsesStreaming } from './ws/responsesStreaming.js';
 import { register as promRegister, httpRequestDurationMs } from './metrics/prom.js';
+import { ToolRegistry } from './tools/registry.js';
 import './jobs/queues.js';
 
 dotenv.config();
 
 // Confirm OpenAI logging setting at startup
-if (process.env.LOG_OPENAI === 'true') {
+if (process.env['LOG_OPENAI'] === 'true') {
   logger.warn('OpenAI I/O logging enabled', {
-    chatModel: process.env.OPENAI_CHAT_MODEL || 'gpt-4o',
+    chatModel: process.env['OPENAI_CHAT_MODEL'] || 'gpt-4o',
   });
 }
 
@@ -209,6 +211,9 @@ app.use('/api/trpc/:procedure', trpcLimiter, authenticateApiKey, async (req, res
   }
 });
 
+// TTS endpoint (protected by API key)
+app.use('/api/tts', trpcLimiter, authenticateApiKey, ttsRoutes);
+
 // Voice transcription endpoint (server-side Whisper proxy)
 
 // Accept base64 audio to avoid multipart libs and keep Expo client simple
@@ -288,7 +293,7 @@ io.on('connection', (socket) => {
   socket.on('true_streaming_request', async (request: any, callback: (resp: any) => void) => {
     try {
       callback?.({ success: true });
-      if (process.env.LOG_OPENAI === 'true') {
+      if (process.env['LOG_OPENAI'] === 'true') {
         try {
           const preview = {
             hasUserMessage: typeof request?.userMessage === 'string',
@@ -340,12 +345,22 @@ process.on('SIGINT', async () => {
 });
 
 async function startServerWithDbBackoff() {
-  const maxAttempts = Number(process.env.DB_STARTUP_MAX_ATTEMPTS || 8);
-  const baseDelayMs = Number(process.env.DB_STARTUP_BASE_DELAY_MS || 500);
+  const maxAttempts = Number(process.env['DB_STARTUP_MAX_ATTEMPTS'] || 8);
+  const baseDelayMs = Number(process.env['DB_STARTUP_BASE_DELAY_MS'] || 500);
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       await prisma.$connect();
       logger.info('✅ Database connection established');
+      
+      // Initialize tool registry after database connection
+      try {
+        const toolRegistry = ToolRegistry.getInstance();
+        await toolRegistry.initialize();
+        logger.info('✅ Tool registry initialized successfully');
+      } catch (toolError) {
+        logger.error('Failed to initialize tool registry', { error: toolError });
+      }
+      
       break;
     } catch (err) {
       const delay = Math.min(10000, baseDelayMs * Math.pow(2, attempt - 1));

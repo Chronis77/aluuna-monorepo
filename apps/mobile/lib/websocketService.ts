@@ -31,13 +31,13 @@ export interface StreamingRequest {
 
 export interface TrueStreamingRequest {
   userMessage: string;
-  sessionContext: any;
+  currentContext: any;
   conversationHistory: any[];
   sessionId: string;
   messageId: string;
-  systemPrompt?: string;
   temperature?: number;
   maxTokens?: number;
+  userId?: string;
 }
 
 export class WebSocketService {
@@ -185,7 +185,7 @@ export class WebSocketService {
         messageId: request.messageId,
         sessionId: request.sessionId,
         userMessageLength: request.userMessage?.length,
-        systemPromptLength: request.systemPrompt?.length
+        currentContextKeys: request.currentContext ? Object.keys(request.currentContext).length : 0
       });
 
       this.socket.emit('true_streaming_request', request, (ack: any) => {

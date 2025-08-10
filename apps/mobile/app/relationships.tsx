@@ -1,7 +1,8 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+    Animated,
     Alert,
     FlatList,
     Image,
@@ -19,6 +20,8 @@ import { AluunaLoader } from '../components/AluunaLoader';
 import { Toast } from '../components/ui/Toast';
 import { MemoryProcessingService } from '../lib/memoryProcessingService';
 import { trpcClient } from '../lib/trpcClient';
+import { ProfileMenu } from '../components/ProfileMenu';
+import { Dimensions } from 'react-native';
 
 interface RelationshipItem {
   id: string;
@@ -52,6 +55,44 @@ export default function RelationshipsScreen() {
     message: '',
     type: 'info',
   });
+
+  // Profile menu state/animation
+  const { width: screenWidth } = Dimensions.get('window');
+  const PROFILE_MENU_WIDTH = screenWidth * 0.6;
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuTranslateX = useRef(new Animated.Value(screenWidth)).current;
+
+  const toggleProfileMenu = () => {
+    const toValue = isProfileMenuOpen ? screenWidth : 0;
+    Animated.spring(profileMenuTranslateX, {
+      toValue,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 8,
+    }).start();
+    setIsProfileMenuOpen(!isProfileMenuOpen);
+  };
+
+  const handleMenuItemPress = (title: string) => {
+    if (title === 'Memory Profile') router.push('/memory-profile' as any);
+    else if (title === 'Insights') router.push('/insights' as any);
+    else if (title === 'Mantras') router.push('/mantras' as any);
+    else if (title === 'Relationships') router.push('/relationships' as any);
+    else if (title === 'Feedback History') router.push('/feedback-history' as any);
+    else if (title === 'Settings') router.push('/settings' as any);
+    else {
+      setToast({ visible: true, message: `${title} feature coming soon!`, type: 'info' });
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await trpcClient.signOut();
+      router.replace('/login' as any);
+    } catch (error) {
+      setToast({ visible: true, message: 'Error during logout', type: 'error' });
+    }
+  };
 
   // Initialize the relationships screen
   useEffect(() => {
@@ -234,23 +275,12 @@ export default function RelationshipsScreen() {
   const createRelationship = async (name: string, role: string, notes: string) => {
     console.log('➕ Creating new relationship:', { name, role, notes });
     
-    // Generate a simple UUID-like string
-    const generateId = () => {
-      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        const r = Math.random() * 16 | 0;
-        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-      });
-    };
-    
-    const result = await trpcClient.createRelationship({
-      id: generateId(),
-      user_id: currentUserId!,
-      name: name,
-      role: role,
-      notes: notes || null,
-      is_active: true
-    });
+    const result = await trpcClient.createRelationship(
+      currentUserId!,
+      name,
+      role,
+      notes || null
+    );
 
     console.log('➕ Relationship create result:', result);
     if (!result.success) throw new Error('Failed to create relationship');
@@ -323,29 +353,48 @@ export default function RelationshipsScreen() {
     setToast(prev => ({ ...prev, visible: false }));
   }, []);
 
+  // Dynamic filters based on roles
+  const filterOptions = useMemo(() => {
+    const roles = Array.from(
+      new Set(
+        relationships
+          .map(r => (r.role || '').trim())
+          .filter(r => r.length > 0)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+
+    const base = [
+      { key: 'all', label: 'All', icon: 'list' },
+      { key: 'active', label: 'Active', icon: 'check-circle' },
+    ];
+
+    const roleOptions = roles.map(role => ({ key: `role:${role}`, label: role, icon: 'label' }));
+    return [...base, ...roleOptions];
+  }, [relationships]);
+
+  // Reset selected filter if it becomes invalid after relationships change
+  useEffect(() => {
+    if (selectedFilter.startsWith('role:')) {
+      const role = selectedFilter.slice(5).toLowerCase();
+      const exists = relationships.some(r => (r.role || '').trim().toLowerCase() === role);
+      if (!exists) setSelectedFilter('all');
+    }
+  }, [relationships]);
+
   // Filter and search relationships
   const filteredRelationships = relationships.filter(item => {
-    const matchesSearch = searchText === '' || 
+    const matchesSearch = searchText === '' ||
       item.name.toLowerCase().includes(searchText.toLowerCase()) ||
-      item.role.toLowerCase().includes(searchText.toLowerCase()) ||
+      ((item.role || '').toLowerCase().includes(searchText.toLowerCase())) ||
       (item.notes && item.notes.toLowerCase().includes(searchText.toLowerCase()));
-    
-    const matchesFilter = selectedFilter === 'all' || 
+
+    const matchesFilter =
+      selectedFilter === 'all' ||
       (selectedFilter === 'active' && item.isActive) ||
-      (selectedFilter === 'family' && ['Partner', 'Child', 'Parent', 'Sibling'].includes(item.role)) ||
-      (selectedFilter === 'friends' && ['Friend'].includes(item.role)) ||
-      (selectedFilter === 'work' && ['Colleague'].includes(item.role));
-    
+      (selectedFilter.startsWith('role:') && ((item.role || '').toLowerCase() === selectedFilter.slice(5).toLowerCase()));
+
     return matchesSearch && matchesFilter;
   });
-
-  const filterOptions = [
-    { key: 'all', label: 'All', icon: 'list' },
-    { key: 'active', label: 'Active', icon: 'check-circle' },
-    { key: 'family', label: 'Family', icon: 'family-restroom' },
-    { key: 'friends', label: 'Friends', icon: 'people' },
-    { key: 'work', label: 'Work', icon: 'work' },
-  ];
 
   if (isLoading) {
     return (
@@ -384,14 +433,17 @@ export default function RelationshipsScreen() {
         </Text>
 
         <View className="flex-row">
-                  <TouchableOpacity 
-          onPress={handleCreateNew}
-          className="mr-3"
-        >
-          <MaterialIcons name="add" size={24} color="#374151" />
-        </TouchableOpacity>
-          <TouchableOpacity onPress={() => loadRelationshipsData(currentUserId!)}>
+          <TouchableOpacity 
+            onPress={handleCreateNew}
+            className="mr-3"
+          >
+            <MaterialIcons name="add" size={24} color="#374151" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => loadRelationshipsData(currentUserId!)} className="mr-3">
             <MaterialIcons name="refresh" size={24} color="#374151" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={toggleProfileMenu}>
+            <MaterialIcons name="account-circle" size={28} color="#374151" />
           </TouchableOpacity>
         </View>
       </View>
@@ -548,6 +600,33 @@ export default function RelationshipsScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Profile Menu */}
+      <Animated.View
+        className="absolute top-0 bottom-0 right-0 bg-white shadow-lg"
+        style={{
+          width: PROFILE_MENU_WIDTH,
+          transform: [{ translateX: profileMenuTranslateX }],
+          zIndex: 60,
+        }}
+      >
+        <ProfileMenu
+          visible={isProfileMenuOpen}
+          onClose={toggleProfileMenu}
+          onLogout={handleLogout}
+          onMenuItemPress={handleMenuItemPress}
+        />
+      </Animated.View>
+
+      {/* Overlay for profile menu */}
+      {isProfileMenuOpen && (
+        <TouchableOpacity
+          className="absolute inset-0"
+          activeOpacity={1}
+          onPress={toggleProfileMenu}
+          style={{ backgroundColor: 'rgba(0,0,0,0.2)', zIndex: 50 }}
+        />
+      )}
     </SafeAreaView>
   );
 } 

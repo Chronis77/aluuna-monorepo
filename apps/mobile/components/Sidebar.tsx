@@ -26,9 +26,9 @@ export function Sidebar({
       }`}
       onPress={() => onConversationSelect(item)}
     >
-      <Text className="font-semibold text-gray-800 mb-1">{item.title || 'Untitled Conversation'}</Text>
+      <Text className="font-semibold text-gray-800 mb-2">{item.title || 'Untitled Conversation'}</Text>
       <Text className="text-sm text-gray-600 mb-1">{item.context_summary || 'No summary available'}</Text>
-      <Text className="text-xs text-gray-400">
+      <Text className="text-xs text-gray-400 mt-1">
         {new Date(item.started_at).toLocaleDateString()}
       </Text>
     </TouchableOpacity>
@@ -41,7 +41,7 @@ export function Sidebar({
           Conversations
         </Text>
         <Text className="text-sm text-gray-600">
-          Your therapeutic conversations
+          Your conversations with Aluuna
         </Text>
       </View>
 

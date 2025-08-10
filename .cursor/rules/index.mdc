@@ -1,0 +1,106 @@
+## Aluuna repo rules (Cursor)
+
+These rules make Cursor AI repo-aware for faster, safer edits across the monorepo.
+
+### Monorepo overview
+- apps/services: Bun + TypeScript service (Express + tRPC + Socket.IO) with OpenAI, Prisma, Redis, and Google TTS
+- apps/mobile: Mobile app consuming websocket streaming and tRPC APIs
+- db_offline/database_structure.sql: canonical relational schema (Postgres)
+- turbo.json + workspaces: root orchestrates builds/dev via Turborepo
+
+### Local runbook
+- Env (root or `apps/services/.env`):
+  - OPENAI_API_KEY, OPENAI_CHAT_MODEL=gpt-4o (or similar)
+  - DATABASE_URL (Postgres), REDIS_URL
+  - LOG_OPENAI=true (optional verbose streaming/tool logs)
+  - GOOGLE_CREDENTIALS (JSON string in prod) or `apps/services/google-creds.json` locally
+- Install and run:
+  - npm i
+  - npm run services (starts Bun watcher for `apps/services/src/index.ts`)
+  - npm run mobile (starts mobile dev if configured)
+- Alternative dev stack: `apps/services/scripts/docker-setup.sh start` provisions Postgres + Redis and runs migrations.
+
+### Service architecture (essentials)
+- API layer: tRPC router at `apps/services/src/api/router.ts` with domain routers under `apps/services/src/api/routers/*`
+- OpenAI non-streaming: `apps/services/src/openai/client.ts` (tools via zod-to-json-schema)
+- OpenAI streaming: `apps/services/src/ws/responsesStreaming.ts` using fetch SSE + Socket.IO
+- Tools: define in `apps/services/src/tools/index.ts`; converted once at startup by `ToolRegistry` to OpenAI tool JSON
+- Logging: `LOG_OPENAI=true` surfaces payload previews, token deltas, and tool-call accumulation
+
+### WebSocket streaming protocol (server <-> client)
+- Client emit: `true_streaming_request` with payload:
+  - { userId, userMessage, sessionId, messageId, conversationHistory?, currentContext?, mode?, temperature? }
+- Server emits on channel `true_streaming_message`:
+  - start: { type: 'start', sessionId, messageId, mode }
+  - token: { type: 'token', token, chunkIndex, sessionId, messageId }
+  - tool_call: { type: 'tool_call', toolName, toolData }
+  - tool_result: { type: 'tool_result', toolName, toolResult, success: true }
+  - tool_error: { type: 'tool_error', toolName, error, success: false }
+  - done: { type: 'done', totalChunks, sessionId, messageId, mode }
+  - error: { type: 'error', error }
+- Notes:
+  - Server dedupes history and accumulates tool_call JSON across stream deltas. Tools may execute real-time during stream and/or after stream in a post-tools follow-up completion.
+  - If no content and no tools, a short fallback token is emitted before done.
+
+### Database source of truth
+- See `db_offline/database_structure.sql` for full tables, FKs, indexes, and `updated_at` triggers.
+- Core: `public.users` and many user_* tables (themes, goals, coping tools, emotional trends, risk factors, insights, mantras, inner parts, sleep routine, suicidal thoughts, relationships, etc.).
+- RLS is disabled in this setup; enforce access in app/middleware.
+- When writing new persistence:
+  - Always include `user_id`; respect `is_active` flags and CHECK constraints.
+  - Prefer existing tables over new JSON blobs. Add indexes consistent with usage patterns.
+
+### API conventions (tRPC)
+- Define procedures in `apps/services/src/api/routers/<domain>.ts` and register in `router.ts`.
+- Use `protectedProcedure` for authenticated routes.
+- Validate inputs with `zod`; mirror DB column names in Prisma calls.
+
+### OpenAI usage
+- Non-streaming: `openai/client.ts` with automatic tool-call roundtrip.
+- Streaming: `ws/responsesStreaming.ts`
+  - Build MCP/system prompt
+  - Send `stream: true` chat.completions via fetch
+  - Emit tokens and handle tool_calls in real time; perform post-tools completion when needed
+- Models/env: `OPENAI_CHAT_MODEL` default `gpt-4o`; temperature defaults 0.3.
+
+### Tools (function calling)
+- Define tools with Zod schemas under `apps/services/src/tools`. Ensure clear `name`, `description`, and strict `parameters`.
+- The `ToolRegistry` converts Zod to JSON Schema once per startup. Use it in streaming for performance.
+- Ensure tool args include a valid `userId`. The streaming path replaces placeholders with the effective user id.
+
+### Coding standards
+- TypeScript, explicit types for exported APIs; avoid `any`.
+- Small, pure functions; early returns; handle edge cases first.
+- High-clarity naming: verbs for functions, descriptive nouns for variables.
+- Keep logs privacy-safe; never log full PHI. Gate verbose logs with `LOG_OPENAI`.
+- Match existing formatting; don’t reformat unrelated code in edits.
+
+### Where to put things
+- New API route: `apps/services/src/api/routers/<domain>.ts` and add to `router.ts`.
+- New tool: `apps/services/src/tools/<name>.ts` and export from `tools/index.ts`.
+- Streaming behavior changes: `apps/services/src/ws/responsesStreaming.ts`.
+- Prompts/modes: `apps/services/src/openai/prompt.ts`, `apps/services/src/openai/mode.ts`.
+- Prisma/data access: keep in routers or dedicated service modules; follow column names from SQL.
+
+### Build, test, lint
+- Build services: from root `npm run build` or in services `bun run build`.
+- Lint/tests are orchestrated via Turbo scripts if present; prefer small, focused changes that compile cleanly.
+
+### Security & reliability
+- Validate and sanitize all tool args; ensure JSON completeness before execution.
+- Timeouts: streaming reader has a 2 min guard; respect and avoid long synchronous work in-stream.
+- Never block the streaming loop; offload heavy work or use real-time tool executor.
+
+### Helpful references
+- Streaming: `apps/services/src/ws/responsesStreaming.ts`
+- tRPC root: `apps/services/src/api/router.ts`
+- Growth domain example (CRUD + analytics): `apps/services/src/api/routers/growth.ts`
+- OpenAI client (non-streaming): `apps/services/src/openai/client.ts`
+- Tool registry: `apps/services/src/tools/registry.ts`
+- DB schema: `db_offline/database_structure.sql`
+
+### Authoring guidelines for Cursor
+- Prefer minimal, surgical edits; cite files/lines in context when explaining changes.
+- When adding features, include env/config wiring and ensure dev runbook still works.
+- After major edits, ensure a green build for `apps/services`.
+

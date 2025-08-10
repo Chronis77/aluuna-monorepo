@@ -4,6 +4,7 @@ import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { speechManager } from '../lib/speechManager';
 import { VOICE_OPTIONS, VoiceOption, voicePreferencesService } from '../lib/voicePreferencesService';
+import { trpcClient } from '../lib/trpcClient';
 
 interface VoiceSettingsProps {
   isVisible: boolean;
@@ -12,8 +13,8 @@ interface VoiceSettingsProps {
 }
 
 export function VoiceSettings({ isVisible, onClose, onSave }: VoiceSettingsProps) {
-  const [selectedUserVoice, setSelectedUserVoice] = useState<string>('male-1');
-  const [selectedAIVoice, setSelectedAIVoice] = useState<string>('female-1');
+  const [selectedUserVoice, setSelectedUserVoice] = useState<string>('alloy');
+  const [selectedAIVoice, setSelectedAIVoice] = useState<string>('shimmer');
   const [isTesting, setIsTesting] = useState(false);
 
   // Load saved preferences on mount
@@ -24,6 +25,21 @@ export function VoiceSettings({ isVisible, onClose, onSave }: VoiceSettingsProps
   const loadVoicePreferences = async () => {
     try {
       await voicePreferencesService.loadPreferences();
+      // Hydrate from server if available
+      const currentUser: any = await trpcClient.getCurrentUser();
+      if (currentUser?.id) {
+        const userData: any = await trpcClient.getUserData(currentUser.id);
+        const serverPrefs = userData?.data?.user_preferences;
+        if (serverPrefs) {
+          const userVoiceId = serverPrefs.user_voice_id || 'alloy';
+          const aiVoiceId = serverPrefs.ai_voice_id || 'shimmer';
+          await voicePreferencesService.savePreferences({
+            ...voicePreferencesService.getCurrentPreferences(),
+            userVoiceId,
+            aiVoiceId,
+          });
+        }
+      }
       const preferences = voicePreferencesService.getCurrentPreferences();
       setSelectedUserVoice(preferences.userVoiceId);
       setSelectedAIVoice(preferences.aiVoiceId);
@@ -34,10 +50,20 @@ export function VoiceSettings({ isVisible, onClose, onSave }: VoiceSettingsProps
 
   const saveVoicePreferences = async () => {
     try {
+      const existing = voicePreferencesService.getCurrentPreferences();
       await voicePreferencesService.savePreferences({
         userVoiceId: selectedUserVoice,
-        aiVoiceId: selectedAIVoice
+        aiVoiceId: selectedAIVoice,
+        dialogueMode: existing.dialogueMode ?? false
       });
+      // Persist to server as well
+      const currentUser: any = await trpcClient.getCurrentUser();
+      if (currentUser?.id) {
+        await trpcClient.upsertUserPreferences(currentUser.id, {
+          user_voice_id: selectedUserVoice,
+          ai_voice_id: selectedAIVoice,
+        });
+      }
       
       // Close the modal and return to settings page
       onClose();
@@ -65,12 +91,7 @@ export function VoiceSettings({ isVisible, onClose, onSave }: VoiceSettingsProps
       : "Hello, I'm Aluuna. This is how I'll sound when speaking with you.";
 
     console.log(`🎤 Testing voice: ${voice.name} (${voice.gender})`);
-    console.log(`📊 Raw voice params: pitch=${voice.pitch}, rate=${voice.rate}, googleVoice=${voice.googleVoice}`);
-    console.log(`👤 Is user: ${isUser}`);
-    
-    // Get the enhanced voice params that will actually be used
-    const enhancedParams = voicePreferencesService.getVoiceParams(isUser);
-    console.log(`🎯 Enhanced voice params: pitch=${enhancedParams.pitch}, rate=${enhancedParams.rate}`);
+    console.log(`👤 Testing as user: ${isUser}`);
 
     // Temporarily set the voice preferences for testing
     const originalPreferences = voicePreferencesService.getCurrentPreferences();
@@ -143,18 +164,6 @@ export function VoiceSettings({ isVisible, onClose, onSave }: VoiceSettingsProps
               )}
             </View>
             <Text className={`text-sm mb-2 ${isSelected ? 'text-blue-100' : 'text-gray-600'}`}>{voice.description}</Text>
-            <View className="flex-row items-center">
-              <Text className={`text-xs mr-4 ${isSelected ? 'text-blue-200' : 'text-gray-500'}`}>Base Pitch: {voice.pitch}</Text>
-              <Text className={`text-xs ${isSelected ? 'text-blue-200' : 'text-gray-500'}`}>Base Speed: {voice.rate}</Text>
-            </View>
-            <View className="flex-row items-center mt-1">
-              <Text className={`text-xs mr-4 ${isSelected ? 'text-blue-200' : 'text-blue-600'}`}>
-                Enhanced: {voice.gender === 'female' ? Math.max(1.3, voice.pitch).toFixed(1) : Math.min(0.85, voice.pitch).toFixed(1)}
-              </Text>
-              <Text className={`text-xs ${isSelected ? 'text-blue-200' : 'text-blue-600'}`}>
-                Rate: {voice.gender === 'female' ? Math.min(0.85, voice.rate).toFixed(2) : Math.max(0.95, voice.rate).toFixed(2)}
-              </Text>
-            </View>
           </View>
         </View>
         
@@ -256,22 +265,7 @@ export function VoiceSettings({ isVisible, onClose, onSave }: VoiceSettingsProps
           </View>
         </View>
         
-        <View className="bg-white rounded-2xl p-4 mb-4 border border-yellow-200">
-          <View className="flex-row items-start">
-            <View 
-              className="w-8 h-8 rounded-full items-center justify-center mr-3 mt-0.5"
-              style={{ backgroundColor: '#D9770620' }}
-            >
-              <MaterialIcons name="warning" size={16} color="#D97706" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-sm font-semibold text-yellow-900 mb-1">Voice Quality Note</Text>
-              <Text className="text-sm text-yellow-800">
-                Voice quality depends on your device's speech engine. Female voices use higher pitch settings for better distinction.
-              </Text>
-            </View>
-          </View>
-        </View>
+        {/* Removed technical pitch/rate notes for a cleaner UI */}
       </ScrollView>
 
       <View className="flex-row p-4 pb-8 border-t border-gray-200 bg-white">

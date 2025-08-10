@@ -853,6 +853,9 @@ model user_preferences {
   preferred_therapist_name String?
   daily_reminder_time DateTime?
   timezone    String?
+  // Added for OpenAI TTS voice selections
+  user_voice_id String?
+  ai_voice_id   String?
   created_at  DateTime @default(now())
   updated_at  DateTime @default(now())
 }

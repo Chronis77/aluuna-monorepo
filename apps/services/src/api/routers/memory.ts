@@ -1,9 +1,8 @@
 import { initTRPC } from '@trpc/server';
 import { Context } from '../context.js';
 import { logger } from '../../utils/logger.js';
-import { buildMCP } from '../../mcp/buildMCP.js';
 import { z } from 'zod';
-import { protectedProcedure, publicProcedure } from '../middleware/auth.js';
+import { protectedProcedure } from '../middleware/auth.js';
 
 const t = initTRPC.context<Context>().create();
 
@@ -184,10 +183,157 @@ export const memoryRouter = t.router({
           goalsCount: userGoals.length
         });
 
-        return memoryProfile;
+        return { success: true, profile: memoryProfile };
       } catch (error) {
         logger.error('Error fetching memory profile', { userId, error });
         throw new Error('Failed to fetch memory profile');
+      }
+    }),
+
+  // Unified memories feed for memory profile page
+  getAllMemories: protectedProcedure
+    .input(z.object({ userId: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const { userId } = input;
+      try {
+        const [
+          innerParts,
+          snapshots,
+          copingTools,
+          shadowThemes,
+          patternLoops
+        ] = await Promise.all([
+          ctx.prisma.user_inner_parts.findMany({ where: { user_id: userId } }),
+          ctx.prisma.user_memory_snapshots.findMany({ where: { user_id: userId }, orderBy: { created_at: 'desc' } }),
+          ctx.prisma.user_coping_tools.findMany({ where: { user_id: userId, is_active: true }, orderBy: { created_at: 'desc' } }),
+          ctx.prisma.user_shadow_themes.findMany({ where: { user_id: userId, is_active: true }, orderBy: { created_at: 'desc' } }),
+          ctx.prisma.user_pattern_loops.findMany({ where: { user_id: userId, is_active: true }, orderBy: { created_at: 'desc' } }),
+        ]);
+
+        const items = [
+          // Inner parts
+          ...innerParts.map((part) => ({
+            id: part.id,
+            type: 'inner_part' as const,
+            title: part.name,
+            content: [part.role, part.description].filter(Boolean).join(' - '),
+            metadata: { role: part.role, tone: part.tone },
+            createdAt: part.created_at,
+            updatedAt: part.updated_at,
+          })),
+          // Memory snapshots
+          ...snapshots.map((snap) => ({
+            id: snap.id,
+            type: 'memory_snapshot' as const,
+            title: 'Session Memory',
+            content: snap.summary,
+            metadata: { themes: snap.key_themes || [], generatedBy: snap.generated_by },
+            createdAt: snap.created_at,
+            updatedAt: snap.updated_at,
+          })),
+          // Coping tools
+          ...copingTools.map((tool) => ({
+            id: tool.id,
+            type: 'coping_tool' as const,
+            title: tool.tool_name,
+            content: tool.description || tool.tool_category || 'Coping tool',
+            metadata: {
+              tool_category: tool.tool_category,
+              effectiveness_rating: tool.effectiveness_rating,
+              when_to_use: tool.when_to_use,
+            },
+            createdAt: tool.created_at,
+            updatedAt: tool.updated_at,
+          })),
+          // Shadow themes
+          ...shadowThemes.map((theme) => ({
+            id: theme.id,
+            type: 'shadow_theme' as const,
+            title: theme.theme_name,
+            content: theme.theme_description || 'Shadow theme',
+            metadata: {
+              triggers: theme.triggers,
+              avoidance_behaviors: theme.avoidance_behaviors,
+              integration_strategies: theme.integration_strategies,
+            },
+            createdAt: theme.created_at,
+            updatedAt: theme.updated_at,
+          })),
+          // Pattern loops
+          ...patternLoops.map((loop) => ({
+            id: loop.id,
+            type: 'pattern_loop' as const,
+            title: loop.loop_name,
+            content: loop.automatic_response || loop.trigger_situation || loop.consequences || 'Pattern loop',
+            metadata: {
+              trigger_situation: loop.trigger_situation,
+              consequences: loop.consequences,
+              alternative_responses: loop.alternative_responses,
+            },
+            createdAt: loop.created_at,
+            updatedAt: loop.updated_at,
+          })),
+        ];
+
+        // Sort newest first by createdAt
+        items.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        return { success: true, items };
+      } catch (error) {
+        logger.error('Error getting all memories', { userId, error });
+        throw new Error('Failed to get memories');
+      }
+    }),
+
+  // Get memory snapshots for a user
+  getMemorySnapshots: protectedProcedure
+    .input(z.object({
+      userId: z.string()
+    }))
+    .query(async ({ input, ctx }) => {
+      try {
+        const snapshots = await ctx.prisma.user_memory_snapshots.findMany({
+          where: { user_id: input.userId },
+          orderBy: { created_at: 'desc' }
+        });
+        return { success: true, snapshots };
+      } catch (error) {
+        logger.error('Error getting memory snapshots', { userId: input.userId, error });
+        throw new Error('Failed to get memory snapshots');
+      }
+    }),
+
+  // Update a memory snapshot summary
+  updateMemorySnapshot: protectedProcedure
+    .input(z.object({
+      id: z.string(),
+      content: z.string()
+    }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const updated = await ctx.prisma.user_memory_snapshots.update({
+          where: { id: input.id },
+          data: { summary: input.content }
+        });
+        return { success: true, snapshot: updated };
+      } catch (error) {
+        logger.error('Error updating memory snapshot', { id: input.id, error });
+        throw new Error('Failed to update memory snapshot');
+      }
+    }),
+
+  // Delete a memory snapshot
+  deleteMemorySnapshot: protectedProcedure
+    .input(z.object({
+      id: z.string()
+    }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        await ctx.prisma.user_memory_snapshots.delete({ where: { id: input.id } });
+        return { success: true };
+      } catch (error) {
+        logger.error('Error deleting memory snapshot', { id: input.id, error });
+        throw new Error('Failed to delete memory snapshot');
       }
     }),
 
@@ -203,26 +349,14 @@ export const memoryRouter = t.router({
       try {
         logger.info('Adding theme', { input });
         
-        // Idempotent: avoid duplicate themes per user+name
-        const existing = await ctx.prisma.user_themes.findFirst({
-          where: { user_id: input.userId, theme_name: input.themeName }
+        const theme = await ctx.prisma.user_themes.create({
+          data: {
+            user_id: input.userId,
+            theme_name: input.themeName,
+            theme_category: input.themeCategory ?? null,
+            importance_level: input.importanceLevel ?? null
+          }
         });
-        const theme = existing
-          ? await ctx.prisma.user_themes.update({
-              where: { id: existing.id },
-              data: {
-                theme_category: input.themeCategory ?? existing.theme_category,
-                importance_level: input.importanceLevel ?? existing.importance_level
-              }
-            })
-          : await ctx.prisma.user_themes.create({
-              data: {
-                user_id: input.userId,
-                theme_name: input.themeName,
-                theme_category: input.themeCategory,
-                importance_level: input.importanceLevel
-              }
-            });
         
         logger.info('Added theme', { id: theme.id });
         return theme;
@@ -250,10 +384,10 @@ export const memoryRouter = t.router({
           data: {
             user_id: input.userId,
             name: input.name,
-            relationship_type: input.relationshipType,
-            role: input.role,
-            importance_level: input.importanceLevel,
-            notes: input.notes
+            relationship_type: input.relationshipType ?? null,
+            role: input.role ?? null,
+            importance_level: input.importanceLevel ?? null,
+            notes: input.notes ?? null
           }
         });
         
@@ -279,30 +413,16 @@ export const memoryRouter = t.router({
       try {
         logger.info('Adding coping tool', { input });
         
-        // Idempotent: avoid duplicate coping tools per user+name
-        const existing = await ctx.prisma.user_coping_tools.findFirst({
-          where: { user_id: input.userId, tool_name: input.toolName }
+        const copingTool = await ctx.prisma.user_coping_tools.create({
+          data: {
+            user_id: input.userId,
+            tool_name: input.toolName,
+            tool_category: input.toolCategory ?? null,
+            effectiveness_rating: input.effectivenessRating ?? null,
+            description: input.description ?? null,
+            when_to_use: input.whenToUse ?? null
+          }
         });
-        const copingTool = existing
-          ? await ctx.prisma.user_coping_tools.update({
-              where: { id: existing.id },
-              data: {
-                tool_category: input.toolCategory ?? existing.tool_category,
-                effectiveness_rating: input.effectivenessRating ?? existing.effectiveness_rating,
-                description: input.description ?? existing.description,
-                when_to_use: input.whenToUse ?? existing.when_to_use
-              }
-            })
-          : await ctx.prisma.user_coping_tools.create({
-              data: {
-                user_id: input.userId,
-                tool_name: input.toolName,
-                tool_category: input.toolCategory,
-                effectiveness_rating: input.effectivenessRating,
-                description: input.description,
-                when_to_use: input.whenToUse
-              }
-            });
         
         logger.info('Added coping tool', { id: copingTool.id });
         return copingTool;
@@ -327,32 +447,17 @@ export const memoryRouter = t.router({
       try {
         logger.info('Adding goal', { input });
         
-        // Idempotent: avoid duplicate goals per user+title
-        const existing = await ctx.prisma.user_goals.findFirst({
-          where: { user_id: input.userId, goal_title: input.goalTitle }
+        const goal = await ctx.prisma.user_goals.create({
+            data: {
+              user_id: input.userId,
+            goal_title: input.goalTitle,
+            goal_description: input.goalDescription ?? null,
+            goal_category: input.goalCategory ?? null,
+            priority_level: input.priorityLevel ?? null,
+            target_date: input.targetDate ?? null,
+            status: input.status
+          }
         });
-        const goal = existing
-          ? await ctx.prisma.user_goals.update({
-              where: { id: existing.id },
-              data: {
-                goal_description: input.goalDescription ?? existing.goal_description,
-                goal_category: input.goalCategory ?? existing.goal_category,
-                priority_level: input.priorityLevel ?? existing.priority_level,
-                target_date: input.targetDate ?? existing.target_date,
-                status: input.status ?? existing.status
-              }
-            })
-          : await ctx.prisma.user_goals.create({
-              data: {
-                user_id: input.userId,
-                goal_title: input.goalTitle,
-                goal_description: input.goalDescription,
-                goal_category: input.goalCategory,
-                priority_level: input.priorityLevel,
-                target_date: input.targetDate,
-                status: input.status
-              }
-            });
         
         logger.info('Added goal', { id: goal.id });
         return goal;
@@ -381,11 +486,11 @@ export const memoryRouter = t.router({
           data: {
             user_id: input.userId,
             pattern_name: input.patternName,
-            pattern_description: input.patternDescription,
+            pattern_description: input.patternDescription ?? null,
             trigger_events: input.triggerEvents || [],
-            emotional_response: input.emotionalResponse,
+            emotional_response: input.emotionalResponse ?? null,
             coping_strategies: input.copingStrategies || [],
-            severity_level: input.severityLevel
+            severity_level: input.severityLevel ?? null
           }
         });
         
@@ -415,9 +520,9 @@ export const memoryRouter = t.router({
           data: {
             user_id: input.userId,
             loop_name: input.loopName,
-            trigger_situation: input.triggerSituation,
-            automatic_response: input.automaticResponse,
-            consequences: input.consequences,
+            trigger_situation: input.triggerSituation ?? null,
+            automatic_response: input.automaticResponse ?? null,
+            consequences: input.consequences ?? null,
             alternative_responses: input.alternativeResponses || []
           }
         });
@@ -448,7 +553,7 @@ export const memoryRouter = t.router({
             data: {
               user_id: input.userId,
             theme_name: input.themeName,
-            theme_description: input.themeDescription,
+            theme_description: input.themeDescription ?? null,
             triggers: input.triggers || [],
             avoidance_behaviors: input.avoidanceBehaviors || [],
             integration_strategies: input.integrationStrategies || []
@@ -477,32 +582,18 @@ export const memoryRouter = t.router({
       try {
         logger.info('Adding strength', { input });
         
-        // Idempotent: avoid duplicate strengths per user+name
-        const existing = await ctx.prisma.user_strengths.findFirst({
-          where: { user_id: input.userId, strength_name: input.strengthName }
+        const strength = await ctx.prisma.user_strengths.create({
+          data: {
+            user_id: input.userId,
+            strength_name: input.strengthName,
+            strength_category: input.strengthCategory ?? null,
+            confidence_level: input.confidenceLevel ?? null,
+            how_developed: input.howDeveloped ?? null,
+            how_utilized: input.howUtilized ?? null
+          }
         });
-        const strength = existing
-          ? await ctx.prisma.user_strengths.update({
-              where: { id: existing.id },
-              data: {
-                strength_category: input.strengthCategory ?? existing.strength_category,
-                confidence_level: input.confidenceLevel ?? existing.confidence_level,
-                how_developed: input.howDeveloped ?? existing.how_developed,
-                how_utilized: input.howUtilized ?? existing.how_utilized
-              }
-            })
-          : await ctx.prisma.user_strengths.create({
-              data: {
-                user_id: input.userId,
-                strength_name: input.strengthName,
-                strength_category: input.strengthCategory,
-                confidence_level: input.confidenceLevel,
-                how_developed: input.howDeveloped,
-                how_utilized: input.howUtilized
-              }
-            });
         
-        logger.info(existing ? 'Updated strength' : 'Added strength', { id: strength.id });
+        logger.info('Added strength', { id: strength.id });
         return strength;
       } catch (error) {
         logger.error('Error adding strength', { input, error });
@@ -530,8 +621,8 @@ export const memoryRouter = t.router({
               user_id: input.userId,
             insight_title: input.insightTitle,
             insight_content: input.insightContent,
-            insight_category: input.insightCategory,
-            importance_level: input.importanceLevel,
+            insight_category: input.insightCategory ?? null,
+            importance_level: input.importanceLevel ?? null,
             related_themes: input.relatedThemes || [],
             action_items: input.actionItems || []
           }
@@ -564,18 +655,18 @@ export const memoryRouter = t.router({
           where: { user_id: input.userId },
           update: {
             current_status: input.currentStatus,
-            partner_name: input.partnerName,
-            relationship_duration: input.relationshipDuration,
-            satisfaction_level: input.satisfactionLevel,
+            partner_name: input.partnerName ?? null,
+            relationship_duration: input.relationshipDuration ?? null,
+            satisfaction_level: input.satisfactionLevel ?? null,
             challenges: input.challenges || [],
             strengths: input.strengths || []
           },
           create: {
             user_id: input.userId,
             current_status: input.currentStatus,
-            partner_name: input.partnerName,
-            relationship_duration: input.relationshipDuration,
-            satisfaction_level: input.satisfactionLevel,
+            partner_name: input.partnerName ?? null,
+            relationship_duration: input.relationshipDuration ?? null,
+            satisfaction_level: input.satisfactionLevel ?? null,
             challenges: input.challenges || [],
             strengths: input.strengths || []
           }
@@ -607,18 +698,18 @@ export const memoryRouter = t.router({
           where: { user_id: input.userId },
           update: {
             living_arrangement: input.livingArrangement,
-            location: input.location,
+            location: input.location ?? null,
             housemates: input.housemates || [],
-            financial_stability: input.financialStability,
-            housing_satisfaction: input.housingSatisfaction
+            financial_stability: input.financialStability ?? null,
+            housing_satisfaction: input.housingSatisfaction ?? null
           },
           create: {
             user_id: input.userId,
             living_arrangement: input.livingArrangement,
-            location: input.location,
+            location: input.location ?? null,
             housemates: input.housemates || [],
-            financial_stability: input.financialStability,
-            housing_satisfaction: input.housingSatisfaction
+            financial_stability: input.financialStability ?? null,
+            housing_satisfaction: input.housingSatisfaction ?? null
           }
         });
         
@@ -644,30 +735,16 @@ export const memoryRouter = t.router({
       try {
         logger.info('Adding support system member', { input });
         
-        // Idempotent: avoid duplicate support member per user+person_name
-        const existing = await ctx.prisma.user_support_system.findFirst({
-          where: { user_id: input.userId, person_name: input.personName }
+        const supportMember = await ctx.prisma.user_support_system.create({
+          data: {
+            user_id: input.userId,
+            person_name: input.personName,
+            relationship_type: input.relationshipType ?? null,
+            support_type: input.supportType || [],
+            reliability_level: input.reliabilityLevel ?? null,
+            contact_info: input.contactInfo ?? null
+          }
         });
-        const supportMember = existing
-          ? await ctx.prisma.user_support_system.update({
-              where: { id: existing.id },
-              data: {
-                relationship_type: input.relationshipType ?? existing.relationship_type,
-                support_type: input.supportType ?? existing.support_type,
-                reliability_level: input.reliabilityLevel ?? existing.reliability_level,
-                contact_info: input.contactInfo ?? existing.contact_info
-              }
-            })
-          : await ctx.prisma.user_support_system.create({
-              data: {
-                user_id: input.userId,
-                person_name: input.personName,
-                relationship_type: input.relationshipType,
-                support_type: input.supportType || [],
-                reliability_level: input.reliabilityLevel,
-                contact_info: input.contactInfo
-              }
-            });
         
         logger.info('Added support system member', { id: supportMember.id });
         return supportMember;
@@ -691,30 +768,16 @@ export const memoryRouter = t.router({
       try {
         logger.info('Adding current stressor', { input });
         
-        // Idempotent: avoid duplicate stressor per user+name
-        const existing = await ctx.prisma.user_current_stressors.findFirst({
-          where: { user_id: input.userId, stressor_name: input.stressorName }
+        const stressor = await ctx.prisma.user_current_stressors.create({
+          data: {
+            user_id: input.userId,
+            stressor_name: input.stressorName,
+            stressor_type: input.stressorType ?? null,
+            impact_level: input.impactLevel ?? null,
+            duration: input.duration ?? null,
+            coping_strategies: input.copingStrategies || []
+          }
         });
-        const stressor = existing
-          ? await ctx.prisma.user_current_stressors.update({
-              where: { id: existing.id },
-              data: {
-                stressor_type: input.stressorType ?? existing.stressor_type,
-                impact_level: input.impactLevel ?? existing.impact_level,
-                duration: input.duration ?? existing.duration,
-                coping_strategies: input.copingStrategies ?? existing.coping_strategies
-              }
-            })
-          : await ctx.prisma.user_current_stressors.create({
-              data: {
-                user_id: input.userId,
-                stressor_name: input.stressorName,
-                stressor_type: input.stressorType,
-                impact_level: input.impactLevel,
-                duration: input.duration,
-                coping_strategies: input.copingStrategies || []
-              }
-            });
         
         logger.info('Added current stressor', { id: stressor.id });
         return stressor;
@@ -738,30 +801,16 @@ export const memoryRouter = t.router({
       try {
         logger.info('Adding daily habit', { input });
         
-        // Idempotent: avoid duplicate daily habit per user+name
-        const existing = await ctx.prisma.user_daily_habits.findFirst({
-          where: { user_id: input.userId, habit_name: input.habitName }
+        const habit = await ctx.prisma.user_daily_habits.create({
+          data: {
+            user_id: input.userId,
+            habit_name: input.habitName,
+            habit_category: input.habitCategory ?? null,
+            frequency: input.frequency ?? null,
+            consistency_level: input.consistencyLevel ?? null,
+            impact_on_wellbeing: input.impactOnWellbeing ?? null
+          }
         });
-        const habit = existing
-          ? await ctx.prisma.user_daily_habits.update({
-              where: { id: existing.id },
-              data: {
-                habit_category: input.habitCategory ?? existing.habit_category,
-                frequency: input.frequency ?? existing.frequency,
-                consistency_level: input.consistencyLevel ?? existing.consistency_level,
-                impact_on_wellbeing: input.impactOnWellbeing ?? existing.impact_on_wellbeing
-              }
-            })
-          : await ctx.prisma.user_daily_habits.create({
-              data: {
-                user_id: input.userId,
-                habit_name: input.habitName,
-                habit_category: input.habitCategory,
-                frequency: input.frequency,
-                consistency_level: input.consistencyLevel,
-                impact_on_wellbeing: input.impactOnWellbeing
-              }
-            });
         
         logger.info('Added daily habit', { id: habit.id });
         return habit;
@@ -786,32 +835,17 @@ export const memoryRouter = t.router({
       try {
         logger.info('Adding substance use', { input });
         
-        // Idempotent: avoid duplicate substance per user+name
-        const existing = await ctx.prisma.user_substance_use.findFirst({
-          where: { user_id: input.userId, substance_name: input.substanceName }
+        const substance = await ctx.prisma.user_substance_use.create({
+          data: {
+            user_id: input.userId,
+            substance_name: input.substanceName,
+            usage_pattern: input.usagePattern ?? null,
+            frequency: input.frequency ?? null,
+            impact_level: input.impactLevel ?? null,
+            triggers: input.triggers || [],
+            harm_reduction_strategies: input.harmReductionStrategies || []
+          }
         });
-        const substance = existing
-          ? await ctx.prisma.user_substance_use.update({
-              where: { id: existing.id },
-              data: {
-                usage_pattern: input.usagePattern ?? existing.usage_pattern,
-                frequency: input.frequency ?? existing.frequency,
-                impact_level: input.impactLevel ?? existing.impact_level,
-                triggers: input.triggers ?? existing.triggers,
-                harm_reduction_strategies: input.harmReductionStrategies ?? existing.harm_reduction_strategies
-              }
-            })
-          : await ctx.prisma.user_substance_use.create({
-              data: {
-                user_id: input.userId,
-                substance_name: input.substanceName,
-                usage_pattern: input.usagePattern,
-                frequency: input.frequency,
-                impact_level: input.impactLevel,
-                triggers: input.triggers || [],
-                harm_reduction_strategies: input.harmReductionStrategies || []
-              }
-            });
         
         logger.info('Added substance use', { id: substance.id });
         return substance;
@@ -839,19 +873,19 @@ export const memoryRouter = t.router({
         const sleepRoutine = await ctx.prisma.user_sleep_routine.upsert({
           where: { user_id: input.userId },
           update: {
-            bedtime: input.bedtime,
-            wake_time: input.wakeTime,
-            sleep_duration_hours: input.sleepDurationHours,
-            sleep_quality_rating: input.sleepQualityRating,
+            bedtime: input.bedtime ?? null,
+            wake_time: input.wakeTime ?? null,
+            sleep_duration_hours: input.sleepDurationHours ?? null,
+            sleep_quality_rating: input.sleepQualityRating ?? null,
             sleep_hygiene_practices: input.sleepHygienePractices || [],
             sleep_issues: input.sleepIssues || []
           },
           create: {
             user_id: input.userId,
-            bedtime: input.bedtime,
-            wake_time: input.wakeTime,
-            sleep_duration_hours: input.sleepDurationHours,
-            sleep_quality_rating: input.sleepQualityRating,
+            bedtime: input.bedtime ?? null,
+            wake_time: input.wakeTime ?? null,
+            sleep_duration_hours: input.sleepDurationHours ?? null,
+            sleep_quality_rating: input.sleepQualityRating ?? null,
             sleep_hygiene_practices: input.sleepHygienePractices || [],
             sleep_issues: input.sleepIssues || []
           }
@@ -880,33 +914,19 @@ export const memoryRouter = t.router({
       try {
         logger.info('Adding previous therapy', { input });
         
-        // Idempotent: avoid duplicate previous therapy per user+therapy_type(+duration)
-        const existing = await ctx.prisma.user_previous_therapy.findFirst({
-          where: { user_id: input.userId, therapy_type: input.therapyType, duration: input.duration ?? undefined }
+        const previousTherapy = await ctx.prisma.user_previous_therapy.create({
+          data: {
+            user_id: input.userId,
+            therapy_type: input.therapyType,
+            therapist_name: input.therapistName ?? null,
+            duration: input.duration ?? null,
+            effectiveness_rating: input.effectivenessRating ?? null,
+            key_insights: input.keyInsights ?? null,
+            termination_reason: input.terminationReason ?? null
+          }
         });
-        const previousTherapy = existing
-          ? await ctx.prisma.user_previous_therapy.update({
-              where: { id: existing.id },
-              data: {
-                therapist_name: input.therapistName ?? existing.therapist_name,
-                effectiveness_rating: input.effectivenessRating ?? existing.effectiveness_rating,
-                key_insights: input.keyInsights ?? existing.key_insights,
-                termination_reason: input.terminationReason ?? existing.termination_reason
-              }
-            })
-          : await ctx.prisma.user_previous_therapy.create({
-              data: {
-                user_id: input.userId,
-                therapy_type: input.therapyType,
-                therapist_name: input.therapistName,
-                duration: input.duration,
-                effectiveness_rating: input.effectivenessRating,
-                key_insights: input.keyInsights,
-                termination_reason: input.terminationReason
-              }
-            });
         
-        logger.info(existing ? 'Updated previous therapy' : 'Added previous therapy', { id: previousTherapy.id });
+        logger.info('Added previous therapy', { id: previousTherapy.id });
         return previousTherapy;
       } catch (error) {
         logger.error('Error adding previous therapy', { input, error });
@@ -932,18 +952,18 @@ export const memoryRouter = t.router({
           where: { user_id: input.userId },
           update: {
             preferred_therapy_styles: input.preferredTherapyStyles || [],
-            preferred_tone: input.preferredTone,
-            communication_style: input.communicationStyle,
-            feedback_frequency: input.feedbackFrequency,
-            session_length_preference: input.sessionLengthPreference
+            preferred_tone: input.preferredTone ?? null,
+            communication_style: input.communicationStyle ?? null,
+            feedback_frequency: input.feedbackFrequency ?? null,
+            session_length_preference: input.sessionLengthPreference ?? null
           },
           create: {
             user_id: input.userId,
             preferred_therapy_styles: input.preferredTherapyStyles || [],
-            preferred_tone: input.preferredTone,
-            communication_style: input.communicationStyle,
-            feedback_frequency: input.feedbackFrequency,
-            session_length_preference: input.sessionLengthPreference
+            preferred_tone: input.preferredTone ?? null,
+            communication_style: input.communicationStyle ?? null,
+            feedback_frequency: input.feedbackFrequency ?? null,
+            session_length_preference: input.sessionLengthPreference ?? null
           }
         });
         
@@ -980,35 +1000,35 @@ export const memoryRouter = t.router({
         const profileSummary = await ctx.prisma.user_profile_summary.upsert({
           where: { user_id: input.userId },
           update: {
-            spiritual_connection_level: input.spiritualConnectionLevel,
-            personal_agency_level: input.personalAgencyLevel,
-            boundaries_awareness: input.boundariesAwareness,
-            self_development_capacity: input.selfDevelopmentCapacity,
-            hard_truths_tolerance: input.hardTruthsTolerance,
-            awareness_level: input.awarenessLevel,
-            suicidal_risk_level: input.suicidalRiskLevel,
-            sleep_quality: input.sleepQuality,
-            mood_score_initial: input.moodScoreInitial,
-            biggest_challenge: input.biggestChallenge,
-            biggest_obstacle: input.biggestObstacle,
-            motivation_for_joining: input.motivationForJoining,
-            hopes_to_achieve: input.hopesToAchieve
+            spiritual_connection_level: input.spiritualConnectionLevel ?? null,
+            personal_agency_level: input.personalAgencyLevel ?? null,
+            boundaries_awareness: input.boundariesAwareness ?? null,
+            self_development_capacity: input.selfDevelopmentCapacity ?? null,
+            hard_truths_tolerance: input.hardTruthsTolerance ?? null,
+            awareness_level: input.awarenessLevel ?? null,
+            suicidal_risk_level: input.suicidalRiskLevel ?? null,
+            sleep_quality: input.sleepQuality ?? null,
+            mood_score_initial: input.moodScoreInitial ?? null,
+            biggest_challenge: input.biggestChallenge ?? null,
+            biggest_obstacle: input.biggestObstacle ?? null,
+            motivation_for_joining: input.motivationForJoining ?? null,
+            hopes_to_achieve: input.hopesToAchieve ?? null
           },
           create: {
             user_id: input.userId,
-            spiritual_connection_level: input.spiritualConnectionLevel,
-            personal_agency_level: input.personalAgencyLevel,
-            boundaries_awareness: input.boundariesAwareness,
-            self_development_capacity: input.selfDevelopmentCapacity,
-            hard_truths_tolerance: input.hardTruthsTolerance,
-            awareness_level: input.awarenessLevel,
-            suicidal_risk_level: input.suicidalRiskLevel,
-            sleep_quality: input.sleepQuality,
-            mood_score_initial: input.moodScoreInitial,
-            biggest_challenge: input.biggestChallenge,
-            biggest_obstacle: input.biggestObstacle,
-            motivation_for_joining: input.motivationForJoining,
-            hopes_to_achieve: input.hopesToAchieve
+            spiritual_connection_level: input.spiritualConnectionLevel ?? null,
+            personal_agency_level: input.personalAgencyLevel ?? null,
+            boundaries_awareness: input.boundariesAwareness ?? null,
+            self_development_capacity: input.selfDevelopmentCapacity ?? null,
+            hard_truths_tolerance: input.hardTruthsTolerance ?? null,
+            awareness_level: input.awarenessLevel ?? null,
+            suicidal_risk_level: input.suicidalRiskLevel ?? null,
+            sleep_quality: input.sleepQuality ?? null,
+            mood_score_initial: input.moodScoreInitial ?? null,
+            biggest_challenge: input.biggestChallenge ?? null,
+            biggest_obstacle: input.biggestObstacle ?? null,
+            motivation_for_joining: input.motivationForJoining ?? null,
+            hopes_to_achieve: input.hopesToAchieve ?? null
           }
         });
         
@@ -1039,11 +1059,11 @@ export const memoryRouter = t.router({
           data: {
             user_id: input.userId,
             state_name: input.stateName,
-            state_description: input.stateDescription,
+            state_description: input.stateDescription ?? null,
             physical_sensations: input.physicalSensations || [],
             thoughts_patterns: input.thoughtsPatterns || [],
             behaviors: input.behaviors || [],
-            intensity_level: input.intensityLevel
+            intensity_level: input.intensityLevel ?? null
           }
         });
         
@@ -1071,47 +1091,21 @@ export const memoryRouter = t.router({
       try {
         logger.info('Adding suicidal thought', { input });
         
-        // Idempotency: if a record already exists for the same user and calendar day, update it instead of creating a duplicate
-        const targetDate = new Date(input.thoughtDate);
-        const startOfDay = new Date(targetDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(startOfDay);
-        endOfDay.setDate(endOfDay.getDate() + 1);
-
-        const existing = await ctx.prisma.user_suicidal_thoughts.findFirst({
-          where: {
+        const suicidalThought = await ctx.prisma.user_suicidal_thoughts.create({
+          data: {
             user_id: input.userId,
-            thought_date: {
-              gte: startOfDay,
-              lt: endOfDay
-            }
-          },
-          orderBy: { thought_date: 'desc' }
+            thought_date: new Date(input.thoughtDate),
+            thought_content: input.thoughtContent ?? null,
+            intensity_level: input.intensityLevel ?? null,
+            risk_level: input.riskLevel ?? null,
+            protective_factors: input.protectiveFactors || [],
+            safety_plan_activated: input.safetyPlanActivated || false,
+            professional_help_sought: input.professionalHelpSought || false
+          }
         });
-
-        const data = {
-          user_id: input.userId,
-          thought_date: targetDate,
-          thought_content: input.thoughtContent,
-          intensity_level: input.intensityLevel,
-          risk_level: input.riskLevel,
-          protective_factors: input.protectiveFactors || [],
-          safety_plan_activated: input.safetyPlanActivated || false,
-          professional_help_sought: input.professionalHelpSought || false
-        };
-
-        if (existing) {
-          const updated = await ctx.prisma.user_suicidal_thoughts.update({
-            where: { id: existing.id },
-            data
-          });
-          logger.info('Updated existing suicidal thought for day', { id: updated.id });
-          return updated;
-        }
-
-        const created = await ctx.prisma.user_suicidal_thoughts.create({ data });
-        logger.info('Added suicidal thought', { id: created.id });
-        return created;
+        
+        logger.info('Added suicidal thought', { id: suicidalThought.id });
+        return suicidalThought;
       } catch (error) {
         logger.error('Error adding suicidal thought', { input, error });
         throw new Error('Failed to add suicidal thought');
@@ -1139,7 +1133,10 @@ export const memoryRouter = t.router({
           'user_pattern_loops': ctx.prisma.user_pattern_loops,
           'user_shadow_themes': ctx.prisma.user_shadow_themes,
           'user_strengths': ctx.prisma.user_strengths,
-          'user_insight_notes': ctx.prisma.user_insight_notes
+          'user_insight_notes': ctx.prisma.user_insight_notes,
+          'user_regulation_strategies': ctx.prisma.user_regulation_strategies,
+          'user_dysregulating_factors': ctx.prisma.user_dysregulating_factors,
+          'user_support_system': ctx.prisma.user_support_system
         };
         
         const model = tableMap[input.tableName];
@@ -1180,7 +1177,10 @@ export const memoryRouter = t.router({
           'user_pattern_loops': ctx.prisma.user_pattern_loops,
           'user_shadow_themes': ctx.prisma.user_shadow_themes,
           'user_strengths': ctx.prisma.user_strengths,
-          'user_insight_notes': ctx.prisma.user_insight_notes
+          'user_insight_notes': ctx.prisma.user_insight_notes,
+          'user_regulation_strategies': ctx.prisma.user_regulation_strategies,
+          'user_dysregulating_factors': ctx.prisma.user_dysregulating_factors,
+          'user_support_system': ctx.prisma.user_support_system
         };
         
         const model = tableMap[input.tableName];

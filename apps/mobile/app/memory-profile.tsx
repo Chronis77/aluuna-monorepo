@@ -1,7 +1,8 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Alert,
   Dimensions,
   FlatList,
@@ -21,12 +22,13 @@ import { Toast } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 import { MemoryProcessingService } from '../lib/memoryProcessingService';
 import { trpcClient } from '../lib/trpcClient';
+import { ProfileMenu } from '../components/ProfileMenu';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 interface MemoryItem {
   id: string;
-  type: 'inner_part' | 'stuck_point' | 'coping_tool' | 'memory_snapshot' | 'shadow_theme' | 'pattern_loop';
+  type: 'inner_part' | 'coping_tool' | 'memory_snapshot' | 'shadow_theme' | 'pattern_loop' | 'regulation_strategy' | 'dysregulating_factor' | 'strength' | 'support_system';
   title: string;
   content: string;
   metadata?: any;
@@ -62,6 +64,43 @@ export default function MemoryProfileScreen() {
     message: '',
     type: 'info',
   });
+
+  // Profile menu state/animation
+  const PROFILE_MENU_WIDTH = screenWidth * 0.6;
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuTranslateX = useRef(new Animated.Value(screenWidth)).current;
+
+  const toggleProfileMenu = () => {
+    const toValue = isProfileMenuOpen ? screenWidth : 0;
+    Animated.spring(profileMenuTranslateX, {
+      toValue,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 8,
+    }).start();
+    setIsProfileMenuOpen(!isProfileMenuOpen);
+  };
+
+  const handleMenuItemPress = (title: string) => {
+    if (title === 'Memory Profile') router.push('/memory-profile' as any);
+    else if (title === 'Insights') router.push('/insights' as any);
+    else if (title === 'Mantras') router.push('/mantras' as any);
+    else if (title === 'Relationships') router.push('/relationships' as any);
+    else if (title === 'Feedback History') router.push('/feedback-history' as any);
+    else if (title === 'Settings') router.push('/settings' as any);
+    else {
+      setToast({ visible: true, message: `${title} feature coming soon!`, type: 'info' });
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await trpcClient.signOut();
+      router.replace('/login' as any);
+    } catch (error) {
+      setToast({ visible: true, message: 'Error during logout', type: 'error' });
+    }
+  };
 
   // Initialize the memory profile screen
   useEffect(() => {
@@ -125,36 +164,36 @@ export default function MemoryProfileScreen() {
 
       const sections: MemorySection[] = [];
 
-      // Process inner parts
-      if (innerParts && innerParts.length > 0) {
-        const innerPartItems: MemoryItem[] = innerParts.map((part: any) => ({
-          id: part.id,
-          type: 'inner_part',
-          title: part.name,
-          content: `${part.role} - ${part.description}`,
-          metadata: { role: part.role, tone: part.tone },
-          createdAt: part.updated_at,
-          updatedAt: part.updated_at,
-        }));
-        
-        sections.push({
-          title: 'Inner Parts',
-          data: innerPartItems,
-          icon: 'psychology',
-          color: '#8B5CF6'
-        });
-      }
+          // Process inner parts
+          if (innerParts && innerParts.length > 0) {
+            const innerPartItems: MemoryItem[] = innerParts.map((part: any) => ({
+              id: part.id,
+              type: 'inner_part',
+              title: part.name,
+              content: [part.role, part.description].filter(Boolean).join(' - '),
+              metadata: { role: part.role, tone: part.tone },
+              createdAt: part.updated_at,
+              updatedAt: part.updated_at,
+            }));
+            
+            sections.push({
+              title: 'Inner Parts',
+              data: innerPartItems,
+              icon: 'psychology',
+              color: '#8B5CF6'
+            });
+          }
 
-      // Process memory snapshots
-      if (memorySnapshots && memorySnapshots.length > 0) {
-        const snapshotItems: MemoryItem[] = memorySnapshots.map((snapshot: any) => ({
-          id: snapshot.id,
-          type: 'memory_snapshot',
-          title: 'Session Memory',
-          content: snapshot.summary,
-          metadata: { themes: snapshot.key_themes, generatedBy: snapshot.generated_by },
-          createdAt: snapshot.created_at,
-        }));
+          // Process memory snapshots
+          if (memorySnapshots && memorySnapshots.length > 0) {
+            const snapshotItems: MemoryItem[] = memorySnapshots.map((snapshot: any) => ({
+              id: snapshot.id,
+              type: 'memory_snapshot',
+              title: 'Session Memory',
+              content: snapshot.summary,
+              metadata: { themes: snapshot.key_themes || [], generatedBy: snapshot.generated_by },
+              createdAt: snapshot.created_at,
+            }));
         
         sections.push({
           title: 'Session Memories',
@@ -171,34 +210,20 @@ export default function MemoryProfileScreen() {
         if (memoryProfile) {
           console.log('🔄 Memory profile loaded successfully');
           
-          // Process stuck points
-          if (memoryProfile.stuck_points && memoryProfile.stuck_points.length > 0) {
-            const stuckPointItems: MemoryItem[] = memoryProfile.stuck_points.map((point: string, index: number) => ({
-              id: `stuck_point_${index}`,
-              type: 'stuck_point',
-              title: 'Stuck Point',
-              content: point,
-              metadata: { originalIndex: index },
-              createdAt: new Date().toISOString(),
-            }));
-            
-            sections.push({
-              title: 'Stuck Points',
-              data: stuckPointItems,
-              icon: 'block',
-              color: '#EF4444'
-            });
-          }
-
           // Process coping tools
           if (memoryProfile.coping_tools && memoryProfile.coping_tools.length > 0) {
-            const copingToolItems: MemoryItem[] = memoryProfile.coping_tools.map((tool: string, index: number) => ({
-              id: `coping_tool_${index}`,
+            const copingToolItems: MemoryItem[] = memoryProfile.coping_tools.map((tool: any) => ({
+              id: tool.id,
               type: 'coping_tool',
-              title: 'Coping Tool',
-              content: tool,
-              metadata: { originalIndex: index },
-              createdAt: new Date().toISOString(),
+              title: tool.tool_name,
+              content: tool.description || tool.tool_category || 'Coping tool',
+              metadata: {
+                tool_category: tool.tool_category,
+                effectiveness_rating: tool.effectiveness_rating,
+                when_to_use: tool.when_to_use,
+              },
+              createdAt: tool.created_at,
+              updatedAt: tool.updated_at,
             }));
             
             sections.push({
@@ -211,13 +236,18 @@ export default function MemoryProfileScreen() {
 
           // Process shadow themes
           if (memoryProfile.shadow_themes && memoryProfile.shadow_themes.length > 0) {
-            const shadowThemeItems: MemoryItem[] = memoryProfile.shadow_themes.map((theme: string, index: number) => ({
-              id: `shadow_theme_${index}`,
+            const shadowThemeItems: MemoryItem[] = memoryProfile.shadow_themes.map((theme: any) => ({
+              id: theme.id,
               type: 'shadow_theme',
-              title: 'Shadow Theme',
-              content: theme,
-              metadata: { originalIndex: index },
-              createdAt: new Date().toISOString(),
+              title: theme.theme_name,
+              content: theme.theme_description || 'Shadow theme',
+              metadata: {
+                triggers: theme.triggers,
+                avoidance_behaviors: theme.avoidance_behaviors,
+                integration_strategies: theme.integration_strategies,
+              },
+              createdAt: theme.created_at,
+              updatedAt: theme.updated_at,
             }));
             
             sections.push({
@@ -230,13 +260,18 @@ export default function MemoryProfileScreen() {
 
           // Process pattern loops
           if (memoryProfile.pattern_loops && memoryProfile.pattern_loops.length > 0) {
-            const patternLoopItems: MemoryItem[] = memoryProfile.pattern_loops.map((loop: string, index: number) => ({
-              id: `pattern_loop_${index}`,
+            const patternLoopItems: MemoryItem[] = memoryProfile.pattern_loops.map((loop: any) => ({
+              id: loop.id,
               type: 'pattern_loop',
-              title: 'Pattern Loop',
-              content: loop,
-              metadata: { originalIndex: index },
-              createdAt: new Date().toISOString(),
+              title: loop.loop_name,
+              content: loop.automatic_response || loop.trigger_situation || loop.consequences || 'Pattern loop',
+              metadata: {
+                trigger_situation: loop.trigger_situation,
+                consequences: loop.consequences,
+                alternative_responses: loop.alternative_responses,
+              },
+              createdAt: loop.created_at,
+              updatedAt: loop.updated_at,
             }));
             
             sections.push({
@@ -246,6 +281,82 @@ export default function MemoryProfileScreen() {
               color: '#8B5CF6'
             });
           }
+
+          // Process regulation strategies
+          if (memoryProfile.regulation_strategies && memoryProfile.regulation_strategies.length > 0) {
+            const items: MemoryItem[] = memoryProfile.regulation_strategies.map((row: any) => ({
+              id: row.id,
+              type: 'regulation_strategy',
+              title: row.strategy_name,
+              content: row.notes || row.when_to_use || row.strategy_type || 'Regulation strategy',
+              metadata: {
+                strategy_type: row.strategy_type,
+                when_to_use: row.when_to_use,
+                effectiveness_rating: row.effectiveness_rating,
+              },
+              createdAt: row.created_at,
+              updatedAt: row.updated_at,
+            }));
+
+            sections.push({
+              title: 'Regulation Strategies',
+              data: items,
+              icon: 'self-improvement',
+              color: '#06B6D4'
+            });
+          }
+
+          // Process dysregulating factors
+          if (memoryProfile.dysregulating_factors && memoryProfile.dysregulating_factors.length > 0) {
+            const items: MemoryItem[] = memoryProfile.dysregulating_factors.map((row: any) => ({
+              id: row.id,
+              type: 'dysregulating_factor',
+              title: row.factor_name,
+              content: row.factor_type || (row.triggers && row.triggers.length > 0 ? `Triggers: ${row.triggers.join(', ')}` : 'Dysregulating factor'),
+              metadata: {
+                factor_type: row.factor_type,
+                impact_level: row.impact_level,
+                triggers: row.triggers,
+                coping_strategies: row.coping_strategies,
+              },
+              createdAt: row.created_at,
+              updatedAt: row.updated_at,
+            }));
+
+            sections.push({
+              title: 'Dysregulating Factors',
+              data: items,
+              icon: 'warning',
+              color: '#F43F5E'
+            });
+          }
+
+          // Process strengths
+          if (memoryProfile.strengths && memoryProfile.strengths.length > 0) {
+            const items: MemoryItem[] = memoryProfile.strengths.map((row: any) => ({
+              id: row.id,
+              type: 'strength',
+              title: row.strength_name,
+              content: row.how_utilized || row.how_developed || row.strength_category || 'Strength',
+              metadata: {
+                strength_category: row.strength_category,
+                confidence_level: row.confidence_level,
+                how_developed: row.how_developed,
+                how_utilized: row.how_utilized,
+              },
+              createdAt: row.created_at,
+              updatedAt: row.updated_at,
+            }));
+
+            sections.push({
+              title: 'Strengths',
+              data: items,
+              icon: 'star',
+              color: '#F59E0B'
+            });
+          }
+
+          // Support system temporarily hidden
         }
       } catch (memoryProfileError) {
         console.log('⚠️ Memory profile failed to load, continuing with basic data only:', memoryProfileError);
@@ -322,30 +433,33 @@ export default function MemoryProfileScreen() {
           await updateMemorySnapshot(editingItem.id, editText.trim());
           success = true;
           break;
-        case 'stuck_point':
         case 'coping_tool':
+          await updateById('user_coping_tools', editingItem.id, { description: editText.trim() });
+          success = true;
+          break;
         case 'shadow_theme':
+          await updateById('user_shadow_themes', editingItem.id, { theme_description: editText.trim() });
+          success = true;
+          break;
         case 'pattern_loop':
-          // These require memory profile to be loaded
-          if (editingItem.metadata?.originalIndex !== undefined) {
-            switch (editingItem.type) {
-              case 'stuck_point':
-                await updateStuckPoint(editingItem.metadata.originalIndex, editText.trim());
-                break;
-              case 'coping_tool':
-                await updateCopingTool(editingItem.metadata.originalIndex, editText.trim());
-                break;
-              case 'shadow_theme':
-                await updateShadowTheme(editingItem.metadata.originalIndex, editText.trim());
-                break;
-              case 'pattern_loop':
-                await updatePatternLoop(editingItem.metadata.originalIndex, editText.trim());
-                break;
-            }
-            success = true;
-          } else {
-            throw new Error('Cannot edit this item - memory profile data not available');
-          }
+          await updateById('user_pattern_loops', editingItem.id, { automatic_response: editText.trim() });
+          success = true;
+          break;
+        case 'regulation_strategy':
+          await updateById('user_regulation_strategies', editingItem.id, { notes: editText.trim() });
+          success = true;
+          break;
+        case 'dysregulating_factor':
+          await updateById('user_dysregulating_factors', editingItem.id, { factor_type: editText.trim() });
+          success = true;
+          break;
+        case 'strength':
+          await updateById('user_strengths', editingItem.id, { how_utilized: editText.trim() });
+          success = true;
+          break;
+        case 'support_system':
+          await updateById('user_support_system', editingItem.id, { relationship_type: editText.trim() });
+          success = true;
           break;
         default:
           throw new Error(`Unknown item type: ${editingItem.type}`);
@@ -401,17 +515,6 @@ export default function MemoryProfileScreen() {
     console.log('✅ Inner part updated successfully');
   };
 
-  const updateStuckPoint = async (index: number, newText: string) => {
-    console.log('✏️ Updating stuck point at index:', index);
-    console.log('✏️ New text:', newText);
-    
-    const result = await trpcClient.updateStuckPoint(currentUserId!, index, newText);
-
-    console.log('✏️ Stuck point update result:', result);
-    if (!result.success) throw new Error('Failed to update stuck point');
-    console.log('✅ Stuck point updated successfully');
-  };
-
   const updateCopingTool = async (index: number, newText: string) => {
     console.log('✏️ Updating coping tool at index:', index);
     console.log('✏️ New text:', newText);
@@ -421,6 +524,17 @@ export default function MemoryProfileScreen() {
     console.log('✏️ Coping tool update result:', result);
     if (!result.success) throw new Error('Failed to update coping tool');
     console.log('✅ Coping tool updated successfully');
+  };
+
+  // Generic update/delete by id via server router
+  const updateById = async (tableName: string, id: string, updates: any) => {
+    const result = await trpcClient.updateMemoryItem(tableName, id, updates);
+    if (!result || result.error) throw new Error('Failed to update item');
+  };
+
+  const deleteById = async (tableName: string, id: string) => {
+    const result = await trpcClient.deleteMemoryItem(tableName, id);
+    if (!result || result.error) throw new Error('Failed to delete item');
   };
 
   const updateMemorySnapshot = async (id: string, newText: string) => {
@@ -485,30 +599,33 @@ export default function MemoryProfileScreen() {
           await deleteMemorySnapshot(item.id);
           success = true;
           break;
-        case 'stuck_point':
         case 'coping_tool':
+          await deleteById('user_coping_tools', item.id);
+          success = true;
+          break;
         case 'shadow_theme':
+          await deleteById('user_shadow_themes', item.id);
+          success = true;
+          break;
         case 'pattern_loop':
-          // These require memory profile to be loaded
-          if (item.metadata?.originalIndex !== undefined) {
-            switch (item.type) {
-              case 'stuck_point':
-                await deleteStuckPoint(item.metadata.originalIndex);
-                break;
-              case 'coping_tool':
-                await deleteCopingTool(item.metadata.originalIndex);
-                break;
-              case 'shadow_theme':
-                await deleteShadowTheme(item.metadata.originalIndex);
-                break;
-              case 'pattern_loop':
-                await deletePatternLoop(item.metadata.originalIndex);
-                break;
-            }
-            success = true;
-          } else {
-            throw new Error('Cannot delete this item - memory profile data not available');
-          }
+          await deleteById('user_pattern_loops', item.id);
+          success = true;
+          break;
+        case 'regulation_strategy':
+          await deleteById('user_regulation_strategies', item.id);
+          success = true;
+          break;
+        case 'dysregulating_factor':
+          await deleteById('user_dysregulating_factors', item.id);
+          success = true;
+          break;
+        case 'strength':
+          await deleteById('user_strengths', item.id);
+          success = true;
+          break;
+        case 'support_system':
+          await deleteById('user_support_system', item.id);
+          success = true;
           break;
         default:
           throw new Error(`Unknown item type: ${item.type}`);
@@ -552,16 +669,6 @@ export default function MemoryProfileScreen() {
     console.log('✅ Inner part deleted successfully');
   };
 
-  const deleteStuckPoint = async (index: number) => {
-    console.log('🗑️ Deleting stuck point at index:', index);
-    
-    const result = await trpcClient.deleteStuckPoint(currentUserId!, index);
-
-    console.log('🗑️ Stuck point delete result:', result);
-    if (!result.success) throw new Error('Failed to delete stuck point');
-    console.log('✅ Stuck point deleted successfully');
-  };
-
   const deleteCopingTool = async (index: number) => {
     console.log('🗑️ Deleting coping tool at index:', index);
     
@@ -603,9 +710,9 @@ export default function MemoryProfileScreen() {
 
   const renderMemoryItem = ({ item }: { item: MemoryItem }) => {
     // Check if this item type requires memory profile data and might not be editable
-    const requiresMemoryProfile = ['stuck_point', 'coping_tool', 'shadow_theme', 'pattern_loop'].includes(item.type);
-    const hasValidMetadata = item.metadata?.originalIndex !== undefined;
-    const isEditable = !requiresMemoryProfile || hasValidMetadata;
+    const requiresMemoryProfile = false;
+    const hasValidMetadata = true;
+    const isEditable = true;
 
     return (
       <View className="bg-white rounded-2xl p-4 mb-3">
@@ -729,8 +836,10 @@ export default function MemoryProfileScreen() {
   const filterOptions = [
     { key: 'all', label: 'All', icon: 'list' },
     { key: 'inner_part', label: 'Inner Parts', icon: 'psychology' },
-    { key: 'stuck_point', label: 'Stuck Points', icon: 'block' },
     { key: 'coping_tool', label: 'Coping Tools', icon: 'healing' },
+    { key: 'regulation_strategy', label: 'Regulation', icon: 'self-improvement' },
+    { key: 'dysregulating_factor', label: 'Dysregulating', icon: 'warning' },
+    { key: 'strength', label: 'Strengths', icon: 'star' },
     { key: 'shadow_theme', label: 'Shadow Themes', icon: 'dark-mode' },
     { key: 'pattern_loop', label: 'Pattern Loops', icon: 'loop' },
     { key: 'memory_snapshot', label: 'Memories', icon: 'history' },
@@ -772,9 +881,14 @@ export default function MemoryProfileScreen() {
           Memory Profile
         </Text>
 
-        <TouchableOpacity onPress={() => loadMemoryData(currentUserId!)}>
-          <MaterialIcons name="refresh" size={24} color="#374151" />
-        </TouchableOpacity>
+        <View className="flex-row">
+          <TouchableOpacity onPress={() => loadMemoryData(currentUserId!)} className="mr-3">
+            <MaterialIcons name="refresh" size={24} color="#374151" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={toggleProfileMenu}>
+            <MaterialIcons name="account-circle" size={28} color="#374151" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search and Filter */}
@@ -873,8 +987,6 @@ export default function MemoryProfileScreen() {
               <Text className="text-sm text-gray-500 mb-3">
                 {editingItem.type === 'inner_part' 
                   ? 'Format: Role - Description (e.g., "Protector - Keeps me safe from emotional harm")'
-                  : editingItem.type === 'stuck_point'
-                  ? 'Describe what you feel stuck on or what\'s blocking your progress'
                   : editingItem.type === 'coping_tool'
                   ? 'Describe the coping strategy or tool that helps you'
                   : editingItem.type === 'shadow_theme'
@@ -921,6 +1033,33 @@ export default function MemoryProfileScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Profile Menu */}
+      <Animated.View
+        className="absolute top-0 bottom-0 right-0 bg-white shadow-lg"
+        style={{
+          width: PROFILE_MENU_WIDTH,
+          transform: [{ translateX: profileMenuTranslateX }],
+          zIndex: 60,
+        }}
+      >
+        <ProfileMenu
+          visible={isProfileMenuOpen}
+          onClose={toggleProfileMenu}
+          onLogout={handleLogout}
+          onMenuItemPress={handleMenuItemPress}
+        />
+      </Animated.View>
+
+      {/* Overlay for profile menu */}
+      {isProfileMenuOpen && (
+        <TouchableOpacity
+          className="absolute inset-0"
+          activeOpacity={1}
+          onPress={toggleProfileMenu}
+          style={{ backgroundColor: 'rgba(0,0,0,0.2)', zIndex: 50 }}
+        />
+      )}
     </SafeAreaView>
   );
 } 

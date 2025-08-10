@@ -73,7 +73,7 @@ sessions (
 ```
 lib/
 ├── sessionService.ts      # Database operations for sessions
-├── openaiService.ts       # OpenAI API integration
+├── conversationResponseService.ts       # OpenAI API integration
 ├── contextService.ts      # Context management
 └── config.ts             # Configuration management
 
@@ -109,7 +109,7 @@ await SessionService.updateSessionWithResponse(sessionRecord.id, gptResponse);
 
 ### Generating AI Response
 ```typescript
-const response = await OpenAIService.generateResponse(
+const response = await ConversationResponseService.generateResponse(
   userMessage,
   sessionContext,
   conversationHistory
@@ -118,10 +118,10 @@ const response = await OpenAIService.generateResponse(
 
 ### Updating Session Metadata
 ```typescript
-if (OpenAIService.shouldSummarizeSession(conversationHistory)) {
+if (ConversationResponseService.shouldSummarizeSession(conversationHistory)) {
   const [title, summary] = await Promise.all([
-    OpenAIService.generateSessionTitle(conversationHistory),
-    OpenAIService.generateSessionSummary(conversationHistory)
+    ConversationResponseService.generateSessionTitle(conversationHistory),
+    ConversationResponseService.generateSessionSummary(conversationHistory)
   ]);
   
   await SessionService.updateSessionGroup(sessionGroupId, { title, summary });

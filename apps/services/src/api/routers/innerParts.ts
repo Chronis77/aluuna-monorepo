@@ -2,7 +2,7 @@ import { initTRPC } from '@trpc/server';
 import { Context } from '../context.js';
 import { logger } from '../../utils/logger.js';
 import { z } from 'zod';
-import { withArrayFallback, withConnectionErrorHandling, withDeleteErrorHandling } from '../../utils/connectionUtils.js';
+import { withArrayFallback, withDeleteErrorHandling } from '../../utils/connectionUtils.js';
 
 
 const t = initTRPC.context<Context>().create();
@@ -18,7 +18,7 @@ export const innerPartsRouter = t.router({
         logger.info('Getting inner parts', { userId: input.userId });
         
         const result = await withArrayFallback(
-          () => ctx.prisma.inner_parts.findMany({
+          () => ctx.prisma.user_inner_parts.findMany({
             where: {
               user_id: input.userId
             },
@@ -30,8 +30,8 @@ export const innerPartsRouter = t.router({
         
         // Filter out inner parts with null names and provide fallbacks
         const validInnerParts = (result.data || [])
-          .filter(part => part.name !== null && part.role !== null && part.description !== null)
-          .map(part => ({
+          .filter((part: any) => part.name !== null && part.role !== null && part.description !== null)
+          .map((part: any) => ({
             id: part.id,
             name: part.name || 'Unnamed Part',
             role: part.role || 'Unknown Role',
@@ -63,7 +63,7 @@ export const innerPartsRouter = t.router({
       try {
         logger.info('Updating inner part', { id: input.id });
         
-        const updatedInnerPart = await ctx.prisma.inner_parts.update({
+        const updatedInnerPart = await ctx.prisma.user_inner_parts.update({
           where: {
             id: input.id
           },
@@ -92,7 +92,7 @@ export const innerPartsRouter = t.router({
         logger.info('Deleting inner part', { id: input.id });
         
         const result = await withDeleteErrorHandling(
-          () => ctx.prisma.inner_parts.delete({
+          () => ctx.prisma.user_inner_parts.delete({
             where: {
               id: input.id
             }

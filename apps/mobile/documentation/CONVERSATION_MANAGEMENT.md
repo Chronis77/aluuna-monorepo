@@ -223,7 +223,7 @@ The system automatically injects:
 
 2. **Environment Variables**
    ```bash
-   EXPO_PUBLIC_OPENAI_API_KEY=your_openai_api_key
+   # No OpenAI key needed on mobile; server handles OpenAI
    ```
 
 3. **Configuration**

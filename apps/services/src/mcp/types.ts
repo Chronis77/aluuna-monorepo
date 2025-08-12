@@ -23,6 +23,17 @@ export const MCPInsightSchema = z.object({
 
 export type MCPInsight = z.infer<typeof MCPInsightSchema>;
 
+export const MCPBoundarySchema = z.object({
+  id: z.string().uuid().optional(),
+  text: z.string(),
+  related_context: z.string().nullable().optional(),
+  firmness: z.number().int().min(1).max(10).nullable().optional(),
+  is_active: z.boolean().nullable().optional(),
+  created_at: z.date().optional(),
+});
+
+export type MCPBoundary = z.infer<typeof MCPBoundarySchema>;
+
 export const MCPMoodTrendSchema = z.object({
   id: z.string().uuid().optional(),
   recorded_at: z.date(),
@@ -254,6 +265,7 @@ export const MCPSchema = z.object({
   supportSystem: z.array(MCPSupportSystemMemberSchema).optional(),
   dailyPractices: z.array(MCPDailyPracticeSchema).optional(),
   habitStreaks: z.array(MCPHabitStreakSchema).optional(),
+  boundaries: z.array(MCPBoundarySchema).optional(),
 });
 
 export type MCP = z.infer<typeof MCPSchema>;

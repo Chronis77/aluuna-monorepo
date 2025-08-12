@@ -16,6 +16,9 @@
     "services": "turbo run dev --filter=@aluuna/services"
   },
   "devDependencies": {
+    "@expo/cli": "^0.24.20",
+    "@expo/server": "^0.6.3",
+    "expo": "^53.0.20",
     "turbo": "^1.10.0"
   }
 }

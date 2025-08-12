@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { MCP } from '../mcp/types.js';
 import { logger } from '../utils/logger.js';
+import { withTemperatureIfSupported } from './modelCaps.js';
 
 const CHAT_MODEL = process.env['OPENAI_CHAT_MODEL'] || 'gpt-4o-mini';
 
@@ -27,7 +28,7 @@ Focus primarily on the current message content, not just background risk level.`
     }
     const resp = await openai.chat.completions.create({
       model: CHAT_MODEL,
-      temperature: 0,
+      ...withTemperatureIfSupported(CHAT_MODEL, 0),
       max_tokens: 120,
       messages: [
         { role: 'system', content: system },

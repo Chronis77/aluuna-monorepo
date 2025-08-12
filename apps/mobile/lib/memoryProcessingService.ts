@@ -255,6 +255,17 @@ export class MemoryProcessingService {
     }
   }
 
+  // Get user boundaries
+  static async getUserBoundaries(userId: string) {
+    try {
+      const response = await trpcClient.getBoundaries(userId);
+      return response.boundaries || [];
+    } catch (error) {
+      console.error('Error getting user boundaries:', error);
+      throw error;
+    }
+  }
+
   // Get user inner parts
   static async getUserInnerParts(userId: string) {
     try {

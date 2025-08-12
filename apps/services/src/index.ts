@@ -46,8 +46,7 @@ const app = express();
 const server = createServer(app);
 const PORT = Number(process.env['PORT'] || 3000);
 
-// API Key for authentication
-const API_KEY = process.env['ALUUNA_APP_API_KEY'] || 'your-secret-api-key-here';
+// API key no longer used
 
 // Initialize Socket.IO with CORS
 const io = new Server(server as any, {
@@ -77,7 +76,7 @@ app.use(cors({
 // Use granular limiters per route to avoid blocking tRPC onboarding bursts
 const AUTH_RATE_LIMIT_MAX = Number(process.env['AUTH_RATE_LIMIT_MAX'] || 20);
 const TRPC_RATE_LIMIT_MAX = Number(
-  process.env['TRPC_RATE_LIMIT_MAX'] || (process.env.NODE_ENV !== 'production' ? 2000 : 600)
+  process.env.NODE_ENV !== 'production' ? 2000 : (process.env['TRPC_RATE_LIMIT_MAX'] || 600)
 );
 
 const authLimiter = rateLimit({
@@ -123,25 +122,22 @@ app.use((req, res, next) => {
   next();
 });
 
-// API Key authentication middleware
-const authenticateApiKey = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
-  
-  if (!apiKey) {
-    return res.status(401).json({ 
-      error: 'API key required',
-      message: 'Please provide an API key in the x-api-key header or Authorization header'
-    });
+// JWT-only authentication middleware (no API key fallback)
+const authenticateRequest = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization as string | undefined;
+    const token = authHeader ? extractTokenFromHeader(authHeader) : undefined;
+    if (token) {
+      const decoded = verifyToken(token);
+      if (!decoded) {
+        return res.status(401).json({ error: 'Unauthorized', message: 'Invalid JWT' });
+      }
+      return next();
+    }
+    return res.status(401).json({ error: 'Unauthorized', message: 'Missing JWT' });
+  } catch (error) {
+    return res.status(401).json({ error: 'Unauthorized', message: 'Authentication failed' });
   }
-  
-  if (apiKey !== API_KEY) {
-    return res.status(403).json({ 
-      error: 'Invalid API key',
-      message: 'The provided API key is invalid'
-    });
-  }
-  
-  next();
 };
 
 // Health check endpoint (no authentication required)
@@ -174,7 +170,7 @@ app.use('/api/auth', authLimiter, authRoutes);
 
 
 // tRPC middleware with more generous rate limit
-app.use('/api/trpc/:procedure', trpcLimiter, authenticateApiKey, async (req, res) => {
+app.use('/api/trpc/:procedure', trpcLimiter, authenticateRequest, async (req, res) => {
   const { procedure } = req.params;
   const input = req.body;
   
@@ -212,12 +208,12 @@ app.use('/api/trpc/:procedure', trpcLimiter, authenticateApiKey, async (req, res
 });
 
 // TTS endpoint (protected by API key)
-app.use('/api/tts', trpcLimiter, authenticateApiKey, ttsRoutes);
+app.use('/api/tts', trpcLimiter, authenticateRequest, ttsRoutes);
 
 // Voice transcription endpoint (server-side Whisper proxy)
 
 // Accept base64 audio to avoid multipart libs and keep Expo client simple
-app.post('/api/voice/transcribe', trpcLimiter, authenticateApiKey, async (req, res) => {
+app.post('/api/voice/transcribe', trpcLimiter, authenticateRequest, async (req, res) => {
   try {
     const authHeader = req.headers.authorization as string | undefined;
     const token = authHeader ? extractTokenFromHeader(authHeader) : undefined;
@@ -380,7 +376,7 @@ async function startServerWithDbBackoff() {
     logger.debug(`📡 Health check: http://localhost:${PORT}/health`);
     logger.debug(`🔌 WebSocket: ws://localhost:${PORT}`);
     logger.debug(`🌐 Server bound to all interfaces (IPv4 & IPv6)`);
-    logger.debug(`🔑 API Key required for protected endpoints`);
+    logger.debug(`🔑 JWT required for protected endpoints`);
   });
 }
 

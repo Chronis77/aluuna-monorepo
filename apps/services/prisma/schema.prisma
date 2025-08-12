@@ -71,6 +71,7 @@ model users {
   user_habit_streaks user_habit_streaks[]
   user_inner_parts user_inner_parts[]
   user_insights user_insights[]
+  user_boundaries user_boundaries[]
   user_mantras user_mantras[]
   user_memory_snapshots user_memory_snapshots[]
   user_onboarding_progress user_onboarding_progress?
@@ -785,6 +786,18 @@ model user_insights {
   importance  Int @default(5)
   created_at  DateTime @default(now())
   updated_at  DateTime @default(now())
+}
+
+model user_boundaries {
+  id              String   @id @default(uuid())
+  user_id         String
+  user            users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  boundary_text   String
+  related_context String?
+  firmness_level  Int @default(5)
+  is_active       Boolean @default(true)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @default(now())
 }
 
 model user_mantras {

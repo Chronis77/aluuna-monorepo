@@ -1,10 +1,11 @@
 import { config } from './config';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { refreshTokens } from './authService';
 
 class TRPCClient {
   private baseUrl: string;
-  private apiKey: string;
+  // Removed API key usage for mobile client; JWT-only
   
   private sanitizeForLogging(input: any) {
     const MAX_INLINE = 200;
@@ -32,9 +33,7 @@ class TRPCClient {
 
   constructor() {
     this.baseUrl = config.server.url;
-    this.apiKey = config.server.apiKey;
     console.log(`🔧 tRPC Client initialized with URL: ${this.baseUrl}`);
-    console.log(`🔑 API Key configured: ${this.apiKey ? 'Yes' : 'No'}`);
   }
 
   private getTimeoutMsForProcedure(procedure: string): number {
@@ -92,7 +91,6 @@ class TRPCClient {
     try {
       console.log(`🔗 Making tRPC request to: ${this.baseUrl}/api/trpc/${procedure}`);
       console.log(`📤 Request input:`, this.sanitizeForLogging(input));
-      console.log(`🔑 Using API key: ${this.apiKey ? 'Configured' : 'Missing'}`);
       
       // Get JWT token from AsyncStorage
       const token = await AsyncStorage.getItem('authToken');
@@ -109,7 +107,6 @@ class TRPCClient {
       
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'X-API-Key': this.apiKey,
       };
       
       // Add JWT token if available
@@ -117,13 +114,28 @@ class TRPCClient {
         headers['Authorization'] = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${this.baseUrl}/api/trpc/${procedure}`, {
+      let response = await fetch(`${this.baseUrl}/api/trpc/${procedure}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(input),
         signal: controller.signal,
       });
       
+      // Handle auth refresh on 401
+      if (response.status === 401) {
+        const refreshed = await refreshTokens();
+        if (refreshed) {
+          const newToken = await AsyncStorage.getItem('authToken');
+          if (newToken) headers['Authorization'] = `Bearer ${newToken}`;
+          response = await fetch(`${this.baseUrl}/api/trpc/${procedure}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(input),
+            signal: controller.signal,
+          });
+        }
+      }
+
       clearTimeout(timeoutId);
       console.log(`📥 Response status: ${response.status}`);
       
@@ -523,6 +535,23 @@ class TRPCClient {
 
   async deleteInsight(id: string) {
     return this.request('insights.deleteInsight', { id });
+  }
+
+  // Boundaries
+  async getBoundaries(userId: string) {
+    return this.request('boundaries.getBoundaries', { userId });
+  }
+
+  async createBoundary(payload: { user_id: string; boundary_text: string; related_context?: string; firmness_level?: number; is_active?: boolean }) {
+    return this.request('boundaries.createBoundary', payload);
+  }
+
+  async updateBoundary(id: string, updates: { boundary_text?: string; related_context?: string; firmness_level?: number; is_active?: boolean }) {
+    return this.request('boundaries.updateBoundary', { id, ...updates });
+  }
+
+  async deleteBoundary(id: string) {
+    return this.request('boundaries.deleteBoundary', { id });
   }
 
   // Goals

@@ -4,7 +4,7 @@ Your React Native app now uses the new Railway-based authentication system inste
 
 ## ✅ What's Been Updated
 
-1. **AuthContext** - Now uses JWT tokens with refresh functionality
+1. **AuthContext** - Uses JWT tokens with automatic refresh
 2. **Login Screen** - Uses new `/api/auth/login` endpoint
 3. **Register Screen** - Uses new `/api/auth/signup` endpoint
 4. **Token Storage** - Secure AsyncStorage with automatic refresh
@@ -12,10 +12,10 @@ Your React Native app now uses the new Railway-based authentication system inste
 
 ## 🚀 How It Works
 
-- **Login/Signup** → Gets JWT token + refresh token
-- **Token Storage** → Securely stored in AsyncStorage
+- **Login/Signup** → Gets JWT + refresh token
+- **Token Storage** → Stored in AsyncStorage
 - **API Calls** → Automatically includes Bearer token
-- **Token Refresh** → Automatic when token expires
+- **Token Refresh** → Automatic silent refresh on expiry; re-authenticate if refresh fails
 - **Logout** → Clears all tokens and calls logout endpoint
 
 ## 🔧 Environment Setup
@@ -40,12 +40,12 @@ These are already configured in your `mobile-env.example` file.
 - ✅ **Existing screens** - No changes needed
 - ✅ **Existing navigation** - Works as before
 - ✅ **Existing UI components** - All preserved
-- ✅ **Token management** - Now more secure with refresh tokens
+- ✅ **Token management** - Automatic refresh via refresh token
 - ✅ **Error handling** - Improved with better error messages
 
 ## 🎯 Key Benefits
 
-1. **Better Security** - JWT tokens with automatic refresh
+1. **Better Security** - JWT-only; no API keys in client; silent refresh
 2. **Faster Performance** - Direct API calls to Railway
 3. **Better Error Handling** - More detailed error messages
 4. **Automatic Token Management** - No manual token handling needed

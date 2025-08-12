@@ -5,6 +5,7 @@ import { classifyMode } from '../openai/mode.js';
 import { logger } from '../utils/logger.js';
 import { tools, handleToolCall } from '../tools/index.js';
 import { prisma } from '../db/client.js';
+import { withTemperatureIfSupported } from '../openai/modelCaps.js';
 import { realTimeToolExecutor } from '../tools/executor.js';
 import { ToolRegistry } from '../tools/registry.js';
 
@@ -82,17 +83,15 @@ export async function handleResponsesStreaming(socket: any, req: StreamingReques
     messages: [{ role: 'system' as const, content: systemPrompt }, ...cleanedHistory, { role: 'user' as const, content: userMessage }],
     tools: openAITools,
     tool_choice: 'auto' as const,
-    temperature,
+    ...withTemperatureIfSupported(CHAT_MODEL, temperature),
     stream: true,
   } as const;
 
   if (process.env['LOG_OPENAI'] === 'true') {
-    const safePayload = JSON.parse(JSON.stringify(payload));
     logger.warn('OpenAI streaming request', {
       userId: effectiveUserId,
       mode: autoMode,
       payload: "Holding this back for now, as it's a lot of data to log"
-      //payload: safePayload,
     });
   }
 
@@ -625,7 +624,7 @@ export async function handleResponsesStreaming(socket: any, req: StreamingReques
           Authorization: `Bearer ${process.env['OPENAI_API_KEY']}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ model: CHAT_MODEL, messages: postToolMessages, temperature }),
+        body: JSON.stringify({ model: CHAT_MODEL, messages: postToolMessages, ...withTemperatureIfSupported(CHAT_MODEL, temperature) }),
       });
       
       const finalJson = await finalResp.json();

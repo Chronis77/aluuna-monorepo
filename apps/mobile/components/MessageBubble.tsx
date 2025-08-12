@@ -8,9 +8,11 @@ interface MessageBubbleProps {
   text: string;
   isUser: boolean;
   timestamp: Date;
+  onTtsStart?: () => void;
+  onTtsEnd?: () => void;
 }
 
-export function MessageBubble({ text, isUser, timestamp }: MessageBubbleProps) {
+export function MessageBubble({ text, isUser, timestamp, onTtsStart, onTtsEnd }: MessageBubbleProps) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const spinnerAnimation = useRef(new Animated.Value(0)).current;
@@ -124,17 +126,25 @@ export function MessageBubble({ text, isUser, timestamp }: MessageBubbleProps) {
       await speechManager.speak(text, messageId, {
         isUser: isUser, // Pass the isUser parameter for different voices
         onStart: () => {
+          onTtsStart?.();
           setIsLoading(false);
           setIsSpeaking(true);
           stopSpinnerAnimation();
           startWaveAnimation();
         },
         onDone: () => {
+          onTtsEnd?.();
           setIsSpeaking(false);
           stopWaveAnimation();
         },
         onError: (error) => {
-          console.error('Speech error:', error);
+          const name = (error as any)?.name || '';
+          const message = (error as any)?.message || '';
+          const isAbort = String(name).includes('Abort') || /aborted/i.test(String(message));
+          if (!isAbort) {
+            console.error('Speech error:', error);
+          }
+          onTtsEnd?.();
           setIsLoading(false);
           setIsSpeaking(false);
           stopSpinnerAnimation();

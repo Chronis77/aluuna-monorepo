@@ -73,8 +73,8 @@ class SpeechManager {
   }
 
   async speak(text: string, speakerId: string, options?: SpeechOptions): Promise<void> {
-    // Stop any current speech
-    if (this.currentSpeaker && this.currentSpeaker !== speakerId) {
+    // Always preempt current playback and requests before starting a new one
+    if (this.currentSpeaker) {
       openAiTtsService.stop();
     }
 
@@ -132,8 +132,20 @@ class SpeechManager {
   stop(): void {
     openAiTtsService.stop();
     this.currentSpeaker = null;
-    // Restore audio mode when stopping
-    this.restoreAudioMode().catch(error => {
+    // Restore audio mode when stopping and ensure speaker routing
+    this.restoreAudioMode().then(async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
+      } catch (e) {
+        console.warn('Audio routing reset failed (non-fatal):', e);
+      }
+    }).catch(error => {
       console.error('Error restoring audio mode:', error);
     });
   }

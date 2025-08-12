@@ -82,7 +82,7 @@ If AI processing fails:
 
 ## Configuration
 
-Requires `EXPO_PUBLIC_OPENAI_API_KEY` environment variable to be set with a valid OpenAI API key.
+Mobile app does not require an OpenAI API key; all AI calls are proxied through the server using JWT auth.
 
 ## Benefits
 

@@ -108,7 +108,6 @@ export const feedbackRouter = t.router({
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
             ],
-            temperature: 0.3,
           }),
         });
 

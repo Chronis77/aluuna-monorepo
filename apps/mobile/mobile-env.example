@@ -2,11 +2,11 @@
 # Aluuna Mobile App Environment Configuration
 # =============================================================================
 
-# OpenAI Configuration (Required)
-EXPO_PUBLIC_OPENAI_API_KEY=your-openai-api-key-here
+# OpenAI Configuration (Not used on mobile; handled by server)
+EXPO_PUBLIC_OPENAI_API_KEY=
 
-# Aluuna Services Configuration (Required)
-EXPO_PUBLIC_ALUUNA_APP_API_KEY=your-aluuna-app-api-key-here
+# Aluuna Services Configuration (No API key on mobile; JWT-based auth)
+EXPO_PUBLIC_ALUUNA_APP_API_KEY=
 
 # Server URLs (Optional - have defaults)
 # Development server URL (prioritized in development mode)

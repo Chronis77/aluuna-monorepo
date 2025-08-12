@@ -5,12 +5,13 @@ import { GPTResponse, GPTResponseSchema } from '../schemas/index.js';
 import { buildMCP } from '../mcp/buildMCP.js';
 import { buildSystemPrompt } from './prompt.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { withTemperatureIfSupported } from './modelCaps.js';
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env['OPENAI_API_KEY'],
 });
 
-const CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o';
+const CHAT_MODEL = process.env['OPENAI_CHAT_MODEL'] || 'gpt-4o';
 
 export async function generateResponse(
   userInput: string,
@@ -23,17 +24,8 @@ export async function generateResponse(
   const mcp = typeof mcpOrContext === 'string'
     ? null
     : await buildMCP(mcpOrContext.userId, mcpOrContext.flags);
-  const systemPrompt = mcp
-    ? buildSystemPrompt(mcp, mode)
-    : buildSystemPrompt({
-        userId,
-        profileSummary: null,
-        innerParts: [],
-        insights: [],
-        emotionalTrends: [],
-        recentSessions: [],
-        currentContext: {},
-      }, mode);
+  const effectiveMcp = mcp ?? await buildMCP(userId, {});
+  const systemPrompt = buildSystemPrompt(effectiveMcp as any, mode);
   
   const messages = [
     { role: 'system' as const, content: systemPrompt },
@@ -41,7 +33,7 @@ export async function generateResponse(
   ];
 
   try {
-    if (process.env.LOG_OPENAI === 'true') {
+    if (process.env['LOG_OPENAI'] === 'true') {
       logger.warn('OpenAI generateResponse preflight', {
         userId,
         mode,
@@ -49,13 +41,13 @@ export async function generateResponse(
         userInputLength: userInput.length,
       });
     }
-    if (process.env.LOG_OPENAI === 'true') {
+    if (process.env['LOG_OPENAI'] === 'true') {
       const requestPayload = {
         model: CHAT_MODEL,
         messages,
         tools,
         tool_choice: 'auto' as const,
-        temperature: 0.3,
+        ...withTemperatureIfSupported(CHAT_MODEL, 0.3),
         max_tokens: 2000,
       };
       logger.warn('OpenAI request', {
@@ -85,7 +77,7 @@ export async function generateResponse(
       messages,
       tools: openAITools,
       tool_choice: 'auto',
-      temperature: 0.3,
+      ...withTemperatureIfSupported(CHAT_MODEL, 0.3),
       max_tokens: 2000,
     });
 
@@ -117,11 +109,11 @@ export async function generateResponse(
         ...toolResults
       ];
 
-      if (process.env.LOG_OPENAI === 'true') {
+      if (process.env['LOG_OPENAI'] === 'true') {
         const postToolsPayload = {
           model: CHAT_MODEL,
           messages: messagesWithTools,
-          temperature: 0.3,
+          ...withTemperatureIfSupported(CHAT_MODEL, 0.3),
           max_tokens: 2000,
         };
         logger.warn('OpenAI request (post-tools)', {
@@ -134,12 +126,12 @@ export async function generateResponse(
       const finalCompletion = await openai.chat.completions.create({
         model: CHAT_MODEL,
         messages: messagesWithTools,
-        temperature: 0.3,
+        ...withTemperatureIfSupported(CHAT_MODEL, 0.3),
         max_tokens: 2000,
       });
 
       const finalResponse = finalCompletion.choices[0]?.message?.content;
-      if (process.env.LOG_OPENAI === 'true') {
+      if (process.env['LOG_OPENAI'] === 'true') {
         const safeFinal = JSON.parse(JSON.stringify(finalCompletion));
         logger.warn('OpenAI response (post-tools)', {
           userId,
@@ -173,7 +165,7 @@ export async function generateResponse(
         userId
       }
     });
-    if (process.env.LOG_OPENAI === 'true') {
+    if (process.env['LOG_OPENAI'] === 'true') {
       const safeCompletion = JSON.parse(JSON.stringify(completion));
       logger.warn('OpenAI response', {
         userId,
@@ -190,84 +182,7 @@ export async function generateResponse(
   }
 }
 
-function buildSystemPrompt(mcpContext: string, mode?: string): string {
-  const basePrompt = `You are Aluuna, an AI therapy assistant designed to provide compassionate, evidence-based therapeutic support. You have access to the user's memory profile and therapeutic history.
-
-## YOUR ROLE
-- Provide empathetic, non-judgmental support
-- Use evidence-based therapeutic techniques
-- Help users gain insights and develop coping strategies
-- Maintain therapeutic boundaries and safety
-- Refer to crisis resources when needed
-
-## THERAPEUTIC APPROACH
-- Use active listening and reflective responses
-- Ask open-ended questions to explore deeper
-- Validate emotions and experiences
-- Help identify patterns and triggers
-- Support goal-setting and progress tracking
-- Encourage self-compassion and growth
-
-## SAFETY PROTOCOLS
-- If user expresses suicidal thoughts, immediately provide crisis resources
-- If user is in immediate danger, encourage emergency services contact
-- Maintain appropriate therapeutic boundaries
-- Do not provide medical advice or diagnosis
-
-## USER CONTEXT
-${mcpContext}
-
-## RESPONSE GUIDELINES
-- Keep responses conversational and warm
-- Focus on the user's immediate needs
-- Use the context provided to personalize responses
-- Encourage reflection and self-awareness
-- Provide practical coping strategies when appropriate
-- End responses with an open question to continue the conversation`;
-
-  // Add mode-specific instructions
-  switch (mode) {
-    case 'crisis_support':
-      return basePrompt + `
-
-## CRISIS SUPPORT MODE
-- Prioritize safety and immediate support
-- Use grounding techniques and crisis intervention
-- Provide clear crisis resources
-- Focus on immediate coping strategies
-- Maintain calm, supportive presence`;
-
-    case 'daily_check_in':
-      return basePrompt + `
-
-## DAILY CHECK-IN MODE
-- Focus on current emotional state and needs
-- Help identify patterns in daily experiences
-- Support goal progress and challenges
-- Encourage self-reflection and awareness
-- Provide daily coping strategies`;
-
-    case 'insight_generation':
-      return basePrompt + `
-
-## INSIGHT GENERATION MODE
-- Help identify patterns and themes
-- Support deeper self-understanding
-- Connect current experiences to past patterns
-- Generate therapeutic insights
-- Support growth and change`;
-
-    default: // free_journaling
-      return basePrompt + `
-
-## FREE JOURNALING MODE
-- Support open exploration of thoughts and feelings
-- Provide reflective responses
-- Help process experiences and emotions
-- Encourage self-expression
-- Support therapeutic growth`;
-  }
-}
+// Using centralized buildSystemPrompt from ./prompt.ts
 
 function extractInsights(response: string): string[] {
   // Simple insight extraction - look for patterns that might indicate insights

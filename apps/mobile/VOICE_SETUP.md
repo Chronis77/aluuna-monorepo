@@ -23,7 +23,7 @@ The app now uses `expo-av` for cross-platform audio recording, providing:
 Create a `.env` file in the root directory with your OpenAI API key:
 
 ```bash
-EXPO_PUBLIC_OPENAI_API_KEY=sk-your_actual_api_key_here
+# No OpenAI key needed on mobile; server-side TTS handles authentication via JWT
 ```
 
 ### 2. OpenAI API Key

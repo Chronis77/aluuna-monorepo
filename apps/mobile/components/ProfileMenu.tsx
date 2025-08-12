@@ -21,6 +21,7 @@ export function ProfileMenu({
   const profileMenuItems = [
     { title: 'Emotion Trends', icon: 'trending-up', color: '#8A318F' }, // purple-custom
     { title: 'Insights', icon: 'lightbulb', color: '#066285' }, // blue-custom
+    { title: 'Boundaries', icon: 'security', color: '#0095CC' }, // blue
     { title: 'Mantras', icon: 'self-improvement', color: '#20B5C9' }, // teal-custom
     { title: 'Daily Practices', icon: 'task-alt', color: '#10B981' }, // emerald
     { title: 'Goals', icon: 'flag', color: '#9FD070' }, // custom green

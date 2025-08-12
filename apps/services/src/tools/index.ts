@@ -224,6 +224,14 @@ const StoreSupportSystemToolSchema = z.object({
   contactInfo: z.string().optional(),
 });
 
+const StoreBoundaryToolSchema = z.object({
+  userId: z.string().uuid(),
+  text: z.string(),
+  relatedContext: z.string().optional(),
+  firmness: z.number().int().min(1).max(10).optional(),
+  isActive: z.boolean().optional(),
+});
+
 export const tools = [
   {
     type: 'function' as const,
@@ -441,6 +449,14 @@ export const tools = [
       parameters: StoreSupportSystemToolSchema
     }
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'storeBoundary',
+      description: 'Store a personal boundary statement with context and firmness.',
+      parameters: StoreBoundaryToolSchema
+    }
+  },
 ];
 
 export async function handleToolCall(toolCall: any): Promise<any> {
@@ -516,6 +532,8 @@ export async function handleToolCall(toolCall: any): Promise<any> {
         return await storeStrength(args);
       case 'storeSupportSystem':
         return await storeSupportSystem(args);
+      case 'storeBoundary':
+        return await storeBoundary(args);
       
       default:
         throw new Error(`Unknown tool: ${name}`);
@@ -1224,4 +1242,27 @@ async function storeSupportSystem(args: any) {
   const content = `${personName} ${relationshipType ?? ''}`.trim();
   await enqueueEmbeddingUpsert({ id: u.id, userId, namespace: 'insight', content, metadata: { type: 'support_system', relationshipType } });
   return { success: true, supportSystemId: u.id };
+}
+
+async function storeBoundary(args: any) {
+  const { userId, text, relatedContext, firmness, isActive } = StoreBoundaryToolSchema.parse(args);
+  const dup = await (prisma as any)['user_boundaries'].findFirst({
+    where: { user_id: userId, boundary_text: text, created_at: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) } }
+  }).catch(() => null);
+  if (dup) {
+    try { toolCalls.inc({ tool_name: 'storeBoundary', status: 'deduped' }); } catch {}
+    return { success: true, boundaryId: dup.id, message: 'Duplicate suppressed' };
+  }
+  const b = await (prisma as any)['user_boundaries'].create({
+    data: {
+      user_id: userId,
+      boundary_text: text,
+      related_context: relatedContext ?? null,
+      firmness_level: firmness ?? 5,
+      is_active: isActive ?? true,
+    }
+  });
+  const embed = `${text} ${relatedContext ?? ''}`.trim();
+  await enqueueEmbeddingUpsert({ id: b.id, userId, namespace: 'insight', content: embed, metadata: { type: 'boundary', firmness } });
+  return { success: true, boundaryId: b.id };
 }

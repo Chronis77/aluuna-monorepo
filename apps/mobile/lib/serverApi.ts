@@ -1,31 +1,45 @@
 import { config } from './config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { refreshTokens } from './authService';
 
 // Server API client for mobile app
 class ServerApiClient {
   private baseUrl: string;
-  private apiKey: string;
 
   constructor() {
     this.baseUrl = config.server.url;
-    this.apiKey = config.server.apiKey;
   }
 
   async request(endpoint: string, options: RequestInit = {}) {
     const url = `${this.baseUrl}${endpoint}`;
-    
+    const token = await AsyncStorage.getItem('authToken');
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.apiKey}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
-    };
+    } as any;
 
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       ...options,
       headers,
     });
 
     if (!response.ok) {
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+      // Attempt token refresh on 401 once
+      if (response.status === 401) {
+        const refreshed = await refreshTokens();
+        if (refreshed) {
+          const newToken = await AsyncStorage.getItem('authToken');
+          const retryHeaders = {
+            ...headers,
+            ...(newToken ? { Authorization: `Bearer ${newToken}` } : {}),
+          } as any;
+          response = await fetch(url, { ...options, headers: retryHeaders });
+        }
+      }
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+      }
     }
 
     return response.json();

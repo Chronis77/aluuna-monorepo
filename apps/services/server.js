@@ -91,25 +91,19 @@ app.use((req, res, next) => {
   next();
 });
 
-// API Key authentication middleware
-const authenticateApiKey = (req, res, next) => {
-  const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
-  
-  if (!apiKey) {
-    return res.status(401).json({ 
-      error: 'API key required',
-      message: 'Please provide an API key in the x-api-key header or Authorization header'
-    });
+// JWT-only auth middleware for legacy server file
+const jwt = require('jsonwebtoken');
+const authenticateJwt = (req, res, next) => {
+  const header = req.headers['authorization'];
+  if (!header) return res.status(401).json({ error: 'Unauthorized', message: 'Missing JWT' });
+  const parts = header.split(' ');
+  if (parts.length !== 2 || parts[0] !== 'Bearer') return res.status(401).json({ error: 'Unauthorized', message: 'Invalid Authorization header' });
+  try {
+    jwt.verify(parts[1], process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production');
+    return next();
+  } catch (e) {
+    return res.status(401).json({ error: 'Unauthorized', message: 'Invalid JWT' });
   }
-  
-  if (apiKey !== API_KEY) {
-    return res.status(403).json({ 
-      error: 'Invalid API key',
-      message: 'The provided API key is invalid'
-    });
-  }
-  
-  next();
 };
 
 // Initialize Google Cloud TTS client
@@ -383,7 +377,7 @@ app.get('/health', (req, res) => {
 });
 
 // Get available voices (requires authentication)
-app.get('/voices', authenticateApiKey, async (req, res) => {
+app.get('/voices', authenticateJwt, async (req, res) => {
   try {
     const [result] = await ttsClient.listVoices({});
     const voices = result.voices;
@@ -418,7 +412,7 @@ app.get('/tts', (req, res) => {
 });
 
 // Text-to-Speech endpoint (requires authentication)
-app.post('/tts', authenticateApiKey, async (req, res) => {
+app.post('/tts', authenticateJwt, async (req, res) => {
   console.log('🎵 TTS request received:', { text: req.body.text?.substring(0, 50) + '...', voice: req.body.voice });
   
   try {
@@ -470,7 +464,7 @@ app.post('/tts', authenticateApiKey, async (req, res) => {
 });
 
 // Chat API endpoint for fallback (requires authentication)
-app.post('/api/chat', authenticateApiKey, async (req, res) => {
+app.post('/api/chat', authenticateJwt, async (req, res) => {
   try {
     const { messages, model = 'gpt-4', temperature = 0.3 } = req.body;
 
@@ -513,7 +507,7 @@ app.post('/api/chat', authenticateApiKey, async (req, res) => {
 });
 
 // SSML Text-to-Speech endpoint (requires authentication)
-app.post('/tts/ssml', authenticateApiKey, async (req, res) => {
+app.post('/tts/ssml', authenticateJwt, async (req, res) => {
   try {
     const { ssml, voice, audioConfig } = req.body;
 

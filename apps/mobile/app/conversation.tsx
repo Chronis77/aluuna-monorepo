@@ -76,13 +76,27 @@ export default function SessionScreen() {
     type: 'info',
   });
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(false);
+  const autoScrollDisableTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const enableAutoScrollFor = (durationMs: number = 1200) => {
+    if (autoScrollDisableTimerRef.current) {
+      clearTimeout(autoScrollDisableTimerRef.current);
+      autoScrollDisableTimerRef.current = null;
+    }
+    setAutoScrollEnabled(true);
+    autoScrollDisableTimerRef.current = setTimeout(() => {
+      setAutoScrollEnabled(false);
+      autoScrollDisableTimerRef.current = null;
+    }, durationMs);
+  };
   const [isRecording, setIsRecording] = useState(false);
   // Note: main handleMenuItemPress lives below with onboarding handling
 
   const [toolActivityStatus, setToolActivityStatus] = useState<{
     visible: boolean;
     message: string;
-    type: 'memory' | 'insight' | 'mantra' | 'coping' | 'goal' | 'theme' | 'relationship' | 'practice' | 'general';
+    type: 'memory' | 'insight' | 'boundary' | 'mantra' | 'coping' | 'goal' | 'theme' | 'relationship' | 'practice' | 'general';
   }>({
     visible: false,
     message: '',
@@ -114,22 +128,16 @@ export default function SessionScreen() {
     loadDialogueMode();
   }, []);
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    if (messages.length > 0) {
-      // Use a longer timeout to ensure content is rendered
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true});
-      }, 150); // Keep short for UI responsiveness
-    }
-  }, [messages]);
+  // Do not auto-scroll on every messages change anymore; handled explicitly where needed
 
   // Enhanced scroll behavior for streaming messages
   const scrollToBottomWithOffset = (offset: number = 0) => {
+    if (!autoScrollEnabled) return;
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToEnd({ animated: true });
-      // Additional scroll after a short delay to account for content rendering
       setTimeout(() => {
+        if (!autoScrollEnabled) return;
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 50);
     }, 100);
@@ -137,33 +145,40 @@ export default function SessionScreen() {
 
   // More aggressive scroll for streaming content
   const scrollToBottomForStreaming = () => {
+    if (!autoScrollEnabled) return;
     // Initial scroll
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 50);
     
     // Multiple follow-up scrolls to ensure content is visible
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 150);
     
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 300);
     
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 500);
   };
 
   // Scroll with offset to account for loading dots and text height
   const scrollToBottomWithPadding = () => {
+    if (!autoScrollEnabled) return;
     setTimeout(() => {
-      // Try to scroll to end with some padding
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToEnd({ animated: true });
       
       // Additional scroll after content renders
       setTimeout(() => {
+        if (!autoScrollEnabled) return;
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
     }, 100);
@@ -171,23 +186,29 @@ export default function SessionScreen() {
 
   // Force scroll to bottom with extra padding
   const forceScrollToBottom = () => {
+    if (!autoScrollEnabled) return;
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 50);
     
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 200);
     
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 400);
   };
 
   // Scroll to actual bottom of content container
   const scrollToActualBottom = () => {
+    if (!autoScrollEnabled) return;
     setTimeout(() => {
       // Scroll to the bottom of the content container with large offset
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToOffset({ 
         offset: 999999, // Large offset to ensure we reach the bottom
         animated: true 
@@ -196,6 +217,7 @@ export default function SessionScreen() {
     
     // Additional scroll attempts
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToOffset({ 
         offset: 999999, 
         animated: true 
@@ -203,6 +225,7 @@ export default function SessionScreen() {
     }, 300);
     
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToOffset({ 
         offset: 999999, 
         animated: true 
@@ -212,6 +235,7 @@ export default function SessionScreen() {
 
   // Fast scroll for streaming text updates
   const fastScrollToBottom = () => {
+    if (!autoScrollEnabled) return;
     // Immediate scroll
     flatListRef.current?.scrollToOffset({ 
       offset: 999999, 
@@ -220,6 +244,7 @@ export default function SessionScreen() {
     
     // Quick follow-up scroll
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToOffset({ 
         offset: 999999, 
         animated: false 
@@ -229,7 +254,9 @@ export default function SessionScreen() {
 
   // Consistent scroll for completion (same as initial page load)
   const scrollToBottomOnComplete = () => {
+    if (!autoScrollEnabled) return;
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToOffset({ 
         offset: 999999, 
         animated: true 
@@ -239,6 +266,7 @@ export default function SessionScreen() {
 
   // Force scroll to actual bottom with multiple attempts
   const forceScrollToActualBottom = () => {
+    if (!autoScrollEnabled) return;
     // Immediate scroll
     flatListRef.current?.scrollToOffset({ 
       offset: 999999, 
@@ -247,6 +275,7 @@ export default function SessionScreen() {
     
     // Multiple follow-up scrolls to override any automatic scrolling
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToOffset({ 
         offset: 999999, 
         animated: false 
@@ -254,6 +283,7 @@ export default function SessionScreen() {
     }, 50);
     
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToOffset({ 
         offset: 999999, 
         animated: false 
@@ -261,6 +291,7 @@ export default function SessionScreen() {
     }, 150);
     
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToOffset({ 
         offset: 999999, 
         animated: false 
@@ -270,6 +301,7 @@ export default function SessionScreen() {
 
   // Smooth scroll to actual bottom for completion
   const smoothScrollToActualBottom = () => {
+    if (!autoScrollEnabled) return;
     // Immediate smooth scroll
     flatListRef.current?.scrollToOffset({ 
       offset: 999999, 
@@ -278,6 +310,7 @@ export default function SessionScreen() {
     
     // Follow-up smooth scroll to ensure we stay at bottom
     setTimeout(() => {
+      if (!autoScrollEnabled) return;
       flatListRef.current?.scrollToOffset({ 
         offset: 999999, 
         animated: true 
@@ -451,10 +484,12 @@ export default function SessionScreen() {
       console.log('Loaded', messageList.length, 'messages');
       setMessages(messageList);
       
-      // Scroll to bottom after messages are loaded
+      // Scroll to bottom after messages are loaded (initial load or when switching)
+      enableAutoScrollFor(1500);
       setTimeout(() => {
+        if (!autoScrollEnabled) return;
         flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100); // Keep short for UI responsiveness
+      }, 100);
     } catch (error) {
       console.error('Error loading messages:', error);
     }
@@ -493,7 +528,8 @@ export default function SessionScreen() {
       
       setMessages(prev => [...prev, userMessageObj, streamingMessage]);
       
-      // Ensure scroll to bottom after adding messages with enhanced timing
+      // When sending a new message, enable auto-scroll for the streaming window
+      setAutoScrollEnabled(true);
       scrollToActualBottom();
 
       // Load fresh messages from database to ensure we have the correct conversation history
@@ -579,8 +615,7 @@ export default function SessionScreen() {
         {
           onStart: () => {
             console.log('🚀 AI streaming started');
-            // Scroll to show loading dots
-            scrollToActualBottom();
+            if (autoScrollEnabled) scrollToActualBottom();
           },
           onToolCall: (toolName: string, toolData?: any) => {
             console.log('🔧 Tool called:', toolName, toolData);
@@ -596,8 +631,7 @@ export default function SessionScreen() {
                   ? { ...msg, isStreaming: false }
                   : msg
               ));
-              // Ensure we stay at the bottom when streaming completes
-              fastScrollToBottom();
+              if (autoScrollEnabled) fastScrollToBottom();
             } else {
               // Update streaming message - hide loading dots after first chunk
               setMessages(prev => prev.map(msg => 
@@ -606,8 +640,7 @@ export default function SessionScreen() {
                   : msg
               ));
               
-              // Scroll to keep text visible as it streams
-              if (chunk.length > 0) {
+              if (chunk.length > 0 && autoScrollEnabled) {
                 fastScrollToBottom();
               }
             }
@@ -615,8 +648,7 @@ export default function SessionScreen() {
           onComplete: (fullResponse: string) => {
             console.log('✅ AI response completed');
             
-            // Smooth scroll to actual bottom BEFORE updating the message
-            smoothScrollToActualBottom();
+            if (autoScrollEnabled) smoothScrollToActualBottom();
             
             // Final update to ensure complete response
             setMessages(prev => prev.map(msg => 
@@ -625,10 +657,16 @@ export default function SessionScreen() {
                 : msg
             ));
 
-            // Smooth scroll again AFTER updating the message
-            setTimeout(() => {
-              smoothScrollToActualBottom();
-            }, 100);
+            if (autoScrollEnabled) {
+              setTimeout(() => {
+                if (autoScrollEnabled) smoothScrollToActualBottom();
+                // Disable auto-scroll after the response is complete to preserve user's place thereafter
+                setAutoScrollEnabled(false);
+              }, 100);
+            } else {
+              // Ensure we disable in any case after completion
+              setAutoScrollEnabled(false);
+            }
 
             // Process memory and update session metadata
             processMemoryAndMetadata(fullResponse, sessionContext, sessionRecordId);
@@ -1143,6 +1181,9 @@ export default function SessionScreen() {
         text={item.text}
         isUser={item.isUser}
         timestamp={item.timestamp}
+        onTtsStart={() => setAutoScrollEnabled(false)}
+        // Do not re-enable auto-scroll after TTS finishes to preserve user's place
+        onTtsEnd={() => { /* no-op to keep user's place */ }}
       />
     );
   };
@@ -1152,6 +1193,8 @@ export default function SessionScreen() {
       router.push('/memory-profile' as any);
     } else if (title === 'Insights') {
       router.push('/insights' as any);
+    } else if (title === 'Boundaries') {
+      router.push('/boundaries' as any);
     } else if (title === 'Mantras') {
       router.push('/mantras' as any);
     } else if (title === 'Relationships') {
@@ -1261,6 +1304,10 @@ export default function SessionScreen() {
       case 'storeTheme':
         message = 'New theme identified';
         type = 'theme';
+        break;
+      case 'storeBoundary':
+        message = 'New boundary saved';
+        type = 'memory';
         break;
       case 'storeShadowTheme':
         message = 'Shadow theme saved';
@@ -1492,10 +1539,19 @@ export default function SessionScreen() {
                   flexGrow: 1 
                 }}
                 onContentSizeChange={() => {
-                  setTimeout(() => flatListRef.current?.scrollToOffset({ offset: 999999, animated: true }), 100);
+                  // Only scroll on explicit windows (initial load, conversation switch, or when sending)
+                  if (!autoScrollEnabled) return;
+                  setTimeout(() => {
+                    if (!autoScrollEnabled) return;
+                    flatListRef.current?.scrollToOffset({ offset: 999999, animated: true });
+                  }, 100);
                 }}
                 onLayout={() => {
-                  setTimeout(() => flatListRef.current?.scrollToOffset({ offset: 999999, animated: true }), 100);
+                  if (!autoScrollEnabled) return;
+                  setTimeout(() => {
+                    if (!autoScrollEnabled) return;
+                    flatListRef.current?.scrollToOffset({ offset: 999999, animated: true });
+                  }, 100);
                 }}
                 onScroll={handleScroll}
                 scrollEventThrottle={16}

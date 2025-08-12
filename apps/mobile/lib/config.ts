@@ -55,10 +55,8 @@ export const config = {
   },
   server: {
     url: getServerUrl(),
-    apiKey: process.env.EXPO_PUBLIC_ALUUNA_APP_API_KEY || 'your-secret-api-key-here',
   },
   tts: {
-    apiKey: process.env.EXPO_PUBLIC_ALUUNA_APP_API_KEY || '', // Aluuna app API key
     serverUrl: process.env.EXPO_PUBLIC_TTS_SERVER_URL || 'https://aluuna-services-production.up.railway.app', // Deployed Railway services server
     timeout: parseInt(process.env.EXPO_PUBLIC_TTS_TIMEOUT || '120000'), // Increased default timeout for longer synthesis and cold starts
   },
@@ -92,22 +90,11 @@ export const config = {
 // Validate that required environment variables are set
 export const validateConfig = () => {
   try {
-    if (!config.openai.apiKey || config.openai.apiKey.trim() === '') {
-      console.warn('OpenAI API key not found. Please set EXPO_PUBLIC_OPENAI_API_KEY in your environment variables.');
+    // Minimal client-side validation; server-side does authentication via JWT
+    if (!config.server.url) {
+      console.warn('Server URL not configured. Set EXPO_PUBLIC_SERVER_URL or EXPO_PUBLIC_DEV_SERVER_URL.');
       return false;
     }
-    
-    // Basic validation that it looks like an API key
-    if (!config.openai.apiKey.startsWith('sk-')) {
-      console.warn('OpenAI API key format appears invalid. Should start with "sk-"');
-      return false;
-    }
-    
-    if (!config.server.apiKey || config.server.apiKey.trim() === '') {
-      console.warn('Server API key not found. Please set EXPO_PUBLIC_ALUUNA_APP_API_KEY in your environment variables.');
-      return false;
-    }
-    
     return true;
   } catch (error) {
     console.error('Error validating config:', error);

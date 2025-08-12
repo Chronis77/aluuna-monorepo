@@ -56,6 +56,7 @@ export default function FeedbackHistoryScreen() {
   const handleMenuItemPress = (title: string) => {
     if (title === 'Memory Profile') router.push('/memory-profile' as any);
     else if (title === 'Insights') router.push('/insights' as any);
+    else if (title === 'Boundaries') router.push('/boundaries' as any);
     else if (title === 'Mantras') router.push('/mantras' as any);
     else if (title === 'Daily Practices') router.push('/daily-practices' as any);
     else if (title === 'Goals') router.push('/goals' as any);

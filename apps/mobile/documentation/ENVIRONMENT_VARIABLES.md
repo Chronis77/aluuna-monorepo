@@ -8,7 +8,7 @@ This document describes all environment variables used in the Aluuna project.
 
 ```env
 # OpenAI API Configuration
-EXPO_PUBLIC_OPENAI_API_KEY=sk-your-openai-api-key-here
+EXPO_PUBLIC_OPENAI_API_KEY=
 
 # Supabase Configuration
 EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
@@ -54,7 +54,7 @@ GOOGLE_APPLICATION_CREDENTIALS=path/to/your/service-account-key.json
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `EXPO_PUBLIC_OPENAI_API_KEY` | OpenAI API key for GPT and Whisper | - | ✅ |
+| `EXPO_PUBLIC_OPENAI_API_KEY` | Not used on mobile (server handles OpenAI) | - | ❌ |
 | `EXPO_PUBLIC_SUPABASE_URL` | Supabase project URL | - | ✅ |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key | - | ✅ |
 | `EXPO_PUBLIC_TTS_SERVER_URL` | Local TTS server URL | `http://localhost:3000` | ❌ |
@@ -80,7 +80,7 @@ Create a `.env` file in the project root:
 
 ```env
 # Required
-EXPO_PUBLIC_OPENAI_API_KEY=sk-your-actual-api-key-here
+EXPO_PUBLIC_OPENAI_API_KEY=
 EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your-actual-anon-key-here
 
@@ -123,7 +123,7 @@ After updating environment variables:
 
 ### Common Issues
 
-1. **"API key not found"**: Check that `EXPO_PUBLIC_OPENAI_API_KEY` is set
+1. "API key not found": Not applicable; mobile does not use an OpenAI key.
 2. **"Supabase connection failed"**: Verify `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 3. **"TTS server not available"**: Ensure `EXPO_PUBLIC_TTS_SERVER_URL` points to your running server
 4. **"Port already in use"**: Change `PORT` in TTS server .env file

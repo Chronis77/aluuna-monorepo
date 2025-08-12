@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Aluuna Services (Bun-based)
+  # Aluuna Services (Bun-based) - Development Mode
   aluuna-services:
     build: .
     ports:
@@ -11,9 +11,10 @@ services:
       - PORT=${PORT:-3000}
       - HOST=${HOST:-0.0.0.0}
       - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - DIRECT_URL=${DIRECT_URL}
+      - REDIS_URL=redis://redis:6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_CHAT_MODEL=${OPENAI_CHAT_MODEL:-gpt-4o}
+      - OPENAI_CHAT_MODEL=${OPENAI_CHAT_MODEL:-gpt-5}
       - LOG_OPENAI=${LOG_OPENAI:-true}
       - ALUUNA_APP_API_KEY=${ALUUNA_APP_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
@@ -33,10 +34,6 @@ services:
       - HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-30000}
       - DB_STARTUP_MAX_ATTEMPTS=${DB_STARTUP_MAX_ATTEMPTS:-8}
       - DB_STARTUP_BASE_DELAY_MS=${DB_STARTUP_BASE_DELAY_MS:-500}
-      # Vector Database Configuration
-      - QDRANT_URL=${QDRANT_URL}
-      - QDRANT_API_KEY=${QDRANT_API_KEY}
-      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-aluuna_memory}
     volumes:
       - .:/app
       - /app/node_modules
@@ -46,8 +43,9 @@ services:
     networks:
       - aluuna-network
     restart: unless-stopped
+    command: ["bun", "run", "dev"]  # Use dev script for hot reloading
 
-  # Redis Cache (Optional - can also use external Redis)
+  # Redis Cache
   redis:
     image: redis:7-alpine
     ports:

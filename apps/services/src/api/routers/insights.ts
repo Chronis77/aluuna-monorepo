@@ -119,13 +119,13 @@ export const insightsRouter = t.router({
       try {
         logger.info('Creating insight', { userId: input.user_id });
         
-        const newInsight = await ctx.prisma.insights.create({
+        const newInsight = await ctx.prisma.user_insights.create({
           data: {
             user_id: input.user_id,
             insight_text: input.insight_text,
             related_theme: input.related_theme,
             importance: input.importance,
-            conversation_message_id: input.conversation_message_id
+            // conversation_message_id: input.conversation_message_id
           }
         });
         

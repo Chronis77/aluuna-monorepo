@@ -2,7 +2,7 @@
   "expo": {
     "name": "aluuna",
     "slug": "aluuna",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "aluuna",
@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.aluuna.app",
-      "buildNumber": "6",
+      "buildNumber": "11",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app needs access to your microphone for journaling features.",
         "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to transcribe your voice for journaling.",

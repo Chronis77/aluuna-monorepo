@@ -40,7 +40,8 @@ export async function buildMCP(userId: string, flags?: Record<string, any>): Pro
       strengthsResult,
       supportSystemResult,
       dailyPracticesResult,
-      habitStreaksResult
+      habitStreaksResult,
+      boundariesResult
     ] = await Promise.all([
       // User profile summary
       withNullFallback(
@@ -254,6 +255,16 @@ export async function buildMCP(userId: string, flags?: Record<string, any>): Pro
         () => prisma.user_habit_streaks.findMany({ where: { user_id: userId } }),
         'user_habit_streaks'
       ),
+
+      // Boundaries
+      withArrayFallback(
+        () => (prisma as any)['user_boundaries'].findMany({
+          where: { user_id: userId },
+          orderBy: { created_at: 'desc' },
+          take: 20,
+        }),
+        'user_boundaries'
+      ),
     ]);
 
     // Extract data from results
@@ -304,6 +315,15 @@ export async function buildMCP(userId: string, flags?: Record<string, any>): Pro
       created_at: s.created_at,
     }));
 
+    const boundaries = (boundariesResult.data || []).map((b: any) => ({
+      id: b.id,
+      text: b.boundary_text,
+      related_context: b.related_context,
+      firmness: b.firmness_level,
+      is_active: b.is_active,
+      created_at: b.created_at ?? undefined,
+    }));
+
     // Build MCP object
     const mcp: MCP = {
       userId,
@@ -313,6 +333,7 @@ export async function buildMCP(userId: string, flags?: Record<string, any>): Pro
       emotionalTrends,
       recentSessions,
       currentContext: flags || {},
+      ...(boundaries.length ? { boundaries } : {}),
       // Conditionally include optional sections only when data is present
       ...(goalsResult.data?.length
         ? { goals: (goalsResult.data || []).map((g: any) => ({

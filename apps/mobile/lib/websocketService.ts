@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { config } from './config';
 
 export interface StreamingMessage {
@@ -71,6 +72,7 @@ export class WebSocketService {
 
     try {
       // Connect to WebSocket server
+      const token = await AsyncStorage.getItem('authToken');
       this.socket = io(config.websocket.url, {
         transports: ['polling', 'websocket'], // Try polling first, then upgrade to websocket
         timeout: 20000,
@@ -82,6 +84,7 @@ export class WebSocketService {
         // Add headers for Railway
         extraHeaders: {
           'User-Agent': 'Aluuna-Mobile-App',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         // Add query parameters for debugging
         query: {

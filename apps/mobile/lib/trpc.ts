@@ -1,5 +1,7 @@
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import { config } from './config.js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { refreshTokens } from './authService';
 
 // Import the router type from the server
 export type AppRouter = {
@@ -76,9 +78,14 @@ export const trpcClient = createTRPCClient<AppRouter>({
   links: [
     httpBatchLink({
       url: `${getBaseUrl()}/api/trpc`,
-      headers: {
-        'x-api-key': config.server.apiKey,
+      async headers() {
+        const token = await AsyncStorage.getItem('authToken');
+        return {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        } as any;
       },
     }),
   ],
 }); 
+
+// Optional: thin wrapper to retry 401 by refreshing tokens at link-level if needed in the future

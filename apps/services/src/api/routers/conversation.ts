@@ -348,7 +348,7 @@ export const conversationRouter = t.router({
         const model = process.env['OPENAI_CHAT_MODEL'] || 'gpt-4o';
 
         // Call OpenAI sequentially for clarity
-        const titlePayload = { model, temperature: 0.2, messages: [ { role: 'system', content: titleSystem }, { role: 'user', content: titleUser } ]};
+        const titlePayload = { model, messages: [ { role: 'system', content: titleSystem }, { role: 'user', content: titleUser } ]};
         
         logger.info('Sending title request to OpenAI', { 
           model, 
@@ -378,7 +378,7 @@ export const conversationRouter = t.router({
           .slice(0, 5)
           .join(' ');
 
-        const summaryPayload = { model, temperature: 0.2, messages: [ { role: 'system', content: summarySystem }, { role: 'user', content: summaryUser } ]};
+        const summaryPayload = { model, messages: [ { role: 'system', content: summarySystem }, { role: 'user', content: summaryUser } ]};
         
         logger.info('Sending summary request to OpenAI', { 
           model, 

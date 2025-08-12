@@ -30,7 +30,7 @@ export const debugRouter = t.router({
       return {
         model,
         tool_choice: 'auto' as const,
-        temperature: 0.3,
+        // temperature intentionally omitted here; depends on model
         max_tokens: 2000,
         messages,
         tools: safeTools,

@@ -143,11 +143,11 @@ export class HybridStreamingService {
       ];
 
       // Make API call to your services backend
-      const response = await fetch(`${config.tts.serverUrl}/api/chat`, {
+      let response = await fetch(`${config.tts.serverUrl}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': config.tts.apiKey,
+          // Authorization header should be attached by higher-level API clients; avoid bundling API keys
         },
         body: JSON.stringify({
           messages,
@@ -156,6 +156,23 @@ export class HybridStreamingService {
           max_tokens: 1000,
         }),
       });
+
+      if (!response.ok && response.status === 401) {
+        try {
+          const { refreshTokens } = await import('./authService');
+          const ok = await refreshTokens();
+          if (ok) {
+            const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+            const token = await AsyncStorage.getItem('authToken');
+            const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+            response = await fetch(`${config.tts.serverUrl}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...authHeaders } as any,
+              body: JSON.stringify({ messages, model: 'gpt-4', temperature: 0.3, max_tokens: 1000 }),
+            });
+          }
+        } catch {}
+      }
 
       if (!response.ok) {
         throw new Error(`API request failed: ${response.status}`);

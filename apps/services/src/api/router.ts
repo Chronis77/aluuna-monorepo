@@ -18,6 +18,7 @@ import { feedbackRouter } from './routers/feedback.js';
 import { insightsRouter } from './routers/insights.js';
 import { mantrasRouter } from './routers/mantras.js';
 import { innerPartsRouter } from './routers/innerParts.js';
+import { boundariesRouter } from './routers/boundaries.js';
 
 // Import new specialized routers
 import { themesRouter } from './routers/themes.js';
@@ -49,6 +50,7 @@ export const appRouter = t.router({
   insights: insightsRouter,
   mantras: mantrasRouter,
   innerParts: innerPartsRouter,
+  boundaries: boundariesRouter,
 
   // Specialized data management routers
   themes: themesRouter,

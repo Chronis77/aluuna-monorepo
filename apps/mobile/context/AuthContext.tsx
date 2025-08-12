@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { trpcClient } from '../lib/trpcClient';
+import { refreshTokens } from '../lib/authService';
 
 interface User {
   id: string;
@@ -14,7 +15,6 @@ interface User {
 interface Session {
   user: User;
   token: string;
-  refreshToken: string;
 }
 
 interface AuthContextType {
@@ -23,16 +23,16 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   signup: (email: string, password: string, name?: string) => Promise<{ success: boolean; error?: string; user?: User }>;
-  refreshAuth: () => Promise<boolean>;
   authLoading: boolean;
+  refreshAuth: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 const STORAGE_KEYS = {
   AUTH_TOKEN: 'authToken',
-  REFRESH_TOKEN: 'refreshToken',
   USER_DATA: 'userData',
+  REFRESH_TOKEN: 'refreshToken',
 };
 
 import { config } from '../lib/config';
@@ -74,21 +74,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const loadSession = async () => {
       try {
         console.log('📱 Loading session from AsyncStorage...');
-        const [token, refreshToken, userData] = await Promise.all([
+        const [token, userData, refreshToken] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN),
-          AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN),
           AsyncStorage.getItem(STORAGE_KEYS.USER_DATA),
+          AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN),
         ]);
         
-        if (token && refreshToken && userData) {
+        if (token && userData) {
           const user = JSON.parse(userData);
           const newSession: Session = {
             user,
             token,
-            refreshToken,
           };
           console.log('✅ Found stored session for user:', user.email);
           setSession(newSession);
+        } else if (refreshToken) {
+          // Try to refresh silently if only refresh token exists
+          const ok = await refreshTokens();
+          if (ok) {
+            const newToken = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+            const userJson = await AsyncStorage.getItem(STORAGE_KEYS.USER_DATA);
+            if (newToken && userJson) {
+              const user = JSON.parse(userJson);
+              setSession({ user, token: newToken });
+            }
+          }
         } else {
           console.log('📱 No stored session found');
         }
@@ -123,18 +133,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [isLoading]);
 
-  const storeAuthData = async (user: User, tokens: { token: string; refreshToken: string }) => {
+  const storeAuthData = async (user: User, tokens: { token: string; refreshToken?: string }) => {
     try {
       await Promise.all([
         AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, tokens.token),
-        AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokens.refreshToken),
         AsyncStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(user)),
+        ...(tokens.refreshToken ? [AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokens.refreshToken)] : []),
       ]);
 
       const newSession: Session = {
         user,
         token: tokens.token,
-        refreshToken: tokens.refreshToken,
       };
 
       setSession(newSession);
@@ -149,8 +158,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await Promise.all([
         AsyncStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN),
-        AsyncStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN),
         AsyncStorage.removeItem(STORAGE_KEYS.USER_DATA),
+        AsyncStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN),
       ]);
 
       setSession(null);
@@ -169,10 +178,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       });
 
       if (response.success && response.data) {
-        await storeAuthData(response.data.user, {
-          token: response.data.token,
-          refreshToken: response.data.refreshToken,
-        });
+        await storeAuthData(response.data.user, { token: response.data.token, refreshToken: response.data.refreshToken });
         console.log('✅ Login successful, session stored');
         return { success: true };
       } else {
@@ -194,10 +200,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       });
 
       if (response.success && response.data) {
-        await storeAuthData(response.data.user, {
-          token: response.data.token,
-          refreshToken: response.data.refreshToken,
-        });
+        await storeAuthData(response.data.user, { token: response.data.token, refreshToken: response.data.refreshToken });
         console.log('✅ Signup successful, session stored');
         return { success: true, user: response.data.user };
       } else {
@@ -208,6 +211,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.error('❌ Signup error:', error);
       return { success: false, error: error instanceof Error ? error.message : 'An unexpected error occurred during signup.' };
     }
+  };
+
+  const refreshAuth = async (): Promise<boolean> => {
+    const ok = await refreshTokens();
+    if (ok && session?.user) {
+      const token = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+      if (token) setSession({ user: session.user, token });
+      return true;
+    }
+    return false;
   };
 
   const logout = async () => {
@@ -222,36 +235,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     } finally {
       await clearAuthData();
-    }
-  };
-
-  const refreshAuth = async (): Promise<boolean> => {
-    try {
-      const refreshToken = await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
-      if (!refreshToken) {
-        throw new Error('No refresh token available');
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      const data = await response.json();
-
-      if (data.success && data.data) {
-        await storeAuthData(session!.user, {
-          token: data.data.token,
-          refreshToken: data.data.refreshToken,
-        });
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('❌ Token refresh error:', error);
-      await clearAuthData();
-      return false;
     }
   };
 
